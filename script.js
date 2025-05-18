@@ -22,25 +22,81 @@ const musicianFragmentShader = `
     
     varying vec2 vUv;
     
+    float noise(vec2 p) {
+        return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+    }
+    
     void main() {
+        // Sample texture at original UV and multiple surrounding points for glow effect
         vec4 texColor = texture2D(map, vUv);
         
-        // If pixel is transparent or semi-transparent, it's potentially part of the outline
-        if (texColor.a < 0.99 && texColor.a > 0.01) {
-            // Create dynamic glow based on music intensity
-            float glowStrength = bassIntensity * 0.5 + midIntensity * 0.3 + trebleIntensity * 0.2;
+        // Create dynamic values based on music
+        float musicPower = bassIntensity * 0.6 + midIntensity * 0.3 + trebleIntensity * 0.2;
+        float expandedRange = glowRange * (1.0 + musicPower * 2.0);
+        float pulseRate = 3.0 + musicPower * 4.0;
+        float pulse = sin(time * pulseRate) * 0.5 + 0.5;
+        
+        // Create multiple layers of glow with different radiuses
+        vec2 pixelSize = vec2(1.0) / vec2(textureSize(map, 0));
+        float totalGlow = 0.0;
+        float glowAlpha = 0.0;
+        
+        // Flowing effect parameters
+        float flowSpeed = time * (1.0 + bassIntensity * 2.0);
+        float flowDirection = sin(time * 0.5) * 0.3;
+        
+        // Enhanced glow calculation with multiple samples
+        for(float i = 0.0; i < 3.0; i++) {
+            float radius = (0.5 + i * 2.0) * expandedRange * (0.8 + pulse * 0.4);
             
-            // Pulse effect based on time and music intensity
-            float pulse = sin(time * 5.0) * 0.5 + 0.5;
-            
-            // Apply glow with pulse effect along edge pixels
-            vec3 glow = glowColor * glowStrength * (1.0 + pulse);
-            
-            // Modify the edge color with the glow
-            texColor.rgb = mix(texColor.rgb, glow, 0.7 * (1.0 - texColor.a) * glowRange);
-            
-            // Make edge more opaque based on intensity
-            texColor.a = mix(texColor.a, texColor.a + 0.3 * glowStrength, 0.7);
+            // Sample in a diamond pattern with flow distortion
+            for(float x = -radius; x <= radius; x += radius * 0.5) {
+                for(float y = -radius; y <= radius; y += radius * 0.5) {
+                    if(abs(x) + abs(y) <= radius * 1.2) {
+                        // Add flowing distortion to sampling coordinates
+                        vec2 flowOffset = vec2(
+                            sin(vUv.y * 10.0 + flowSpeed) * 0.02,
+                            cos(vUv.x * 10.0 + flowSpeed + flowDirection) * 0.02
+                        ) * musicPower;
+                        
+                        vec2 sampleUV = vUv + vec2(x, y) * pixelSize + flowOffset;
+                        vec4 sampleColor = texture2D(map, sampleUV);
+                        
+                        // If we found an edge or semi-transparent pixel
+                        if(sampleColor.a > 0.01 && sampleColor.a < 0.99) {
+                            // Calculate distance-based intensity
+                            float dist = length(vec2(x, y)) / radius;
+                            float intensity = smoothstep(1.0, 0.0, dist) * (1.0 - sampleColor.a) * 1.5;
+                            
+                            // Add to total glow with noise variation for more organic feel
+                            float noiseVal = noise(vUv * 10.0 + time * vec2(0.1, 0.2));
+                            totalGlow += intensity * (0.8 + noiseVal * 0.4);
+                            glowAlpha += intensity * 0.3;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Normalize and enhance glow effect
+        totalGlow = min(totalGlow * (1.0 + musicPower * 1.5), 1.0);
+        glowAlpha = min(glowAlpha, 1.0);
+        
+        // Create dynamic flowing glow color with slight hue shift
+        vec3 dynamicGlowColor = glowColor * (0.8 + sin(time * 2.0) * 0.2);
+        dynamicGlowColor += vec3(sin(time + vUv.x * 5.0) * 0.1, sin(time * 1.2 + vUv.y * 5.0) * 0.1, sin(time * 0.8) * 0.1) * musicPower;
+        
+        // Apply strong glow to semi-transparent pixels
+        if(texColor.a < 0.99 && texColor.a > 0.01) {
+            // Enhanced edge glow
+            texColor.rgb = mix(texColor.rgb, dynamicGlowColor * (1.5 + pulse + musicPower), 0.8);
+            texColor.a = min(texColor.a + glowAlpha * 0.8 + musicPower * 0.3, 0.95);
+        }
+        
+        // Apply ambient glow to fully transparent areas
+        if(texColor.a < 0.01 && totalGlow > 0.0) {
+            texColor.rgb = dynamicGlowColor * (1.0 + pulse * 0.5);
+            texColor.a = totalGlow * glowAlpha * (0.3 + musicPower * 0.6);
         }
         
         gl_FragColor = texColor;
@@ -474,56 +530,56 @@ function animateLights(delta) {
         // Adjust shader glow range based on current focus
         if (currentPlayTime < 27.5) {
             // First section: guitarist and bassist highlighted
-            guitarist.material.uniforms.glowRange.value = 2.0 + midAvg * 2.0;
-            bassist.material.uniforms.glowRange.value = 2.0 + bassAvg * 2.0;
+            guitarist.material.uniforms.glowRange.value = 3.0 + midAvg * 3.0;
+            bassist.material.uniforms.glowRange.value = 3.0 + bassAvg * 3.0;
             singer.material.uniforms.glowRange.value = 0.5;
             drummer.material.uniforms.glowRange.value = 0.5;
             backupSinger1.material.uniforms.glowRange.value = 0.5;
             backupSinger2.material.uniforms.glowRange.value = 0.5;
         } else if (currentPlayTime < 55) {
             // Second section: singer and backup singers highlighted
-            guitarist.material.uniforms.glowRange.value = 1.0;
-            bassist.material.uniforms.glowRange.value = 1.0;
-            singer.material.uniforms.glowRange.value = 2.0 + midAvg * 2.0;
+            guitarist.material.uniforms.glowRange.value = 1.5;
+            bassist.material.uniforms.glowRange.value = 1.5;
+            singer.material.uniforms.glowRange.value = 3.0 + midAvg * 3.0;
             drummer.material.uniforms.glowRange.value = 0.5;
-            backupSinger1.material.uniforms.glowRange.value = 1.5 + midAvg * 1.5;
-            backupSinger2.material.uniforms.glowRange.value = 1.5 + midAvg * 1.5;
+            backupSinger1.material.uniforms.glowRange.value = 2.5 + midAvg * 2.5;
+            backupSinger2.material.uniforms.glowRange.value = 2.5 + midAvg * 2.5;
         } else {
             // After drummer enters - cycle highlighting based on focus
             const timePhase = ((currentPlayTime - 55) % 40) / 40; // 0 to 1 phase over 40 seconds
             
             if (timePhase < 0.25) {
                 // Drummer focus
-                drummer.material.uniforms.glowRange.value = 2.0 + bassAvg * 2.0;
-                guitarist.material.uniforms.glowRange.value = 1.0;
-                bassist.material.uniforms.glowRange.value = 1.0;
-                singer.material.uniforms.glowRange.value = 1.0;
-                backupSinger1.material.uniforms.glowRange.value = 0.8;
-                backupSinger2.material.uniforms.glowRange.value = 0.8;
+                drummer.material.uniforms.glowRange.value = 3.0 + bassAvg * 3.0;
+                guitarist.material.uniforms.glowRange.value = 1.5;
+                bassist.material.uniforms.glowRange.value = 1.5;
+                singer.material.uniforms.glowRange.value = 1.5;
+                backupSinger1.material.uniforms.glowRange.value = 1.0;
+                backupSinger2.material.uniforms.glowRange.value = 1.0;
             } else if (timePhase < 0.5) {
                 // Singer focus
-                drummer.material.uniforms.glowRange.value = 1.0;
-                guitarist.material.uniforms.glowRange.value = 1.0;
-                bassist.material.uniforms.glowRange.value = 1.0;
-                singer.material.uniforms.glowRange.value = 2.0 + midAvg * 2.0;
-                backupSinger1.material.uniforms.glowRange.value = 1.5 + midAvg * 1.0;
-                backupSinger2.material.uniforms.glowRange.value = 1.5 + midAvg * 1.0;
+                drummer.material.uniforms.glowRange.value = 1.5;
+                guitarist.material.uniforms.glowRange.value = 1.5;
+                bassist.material.uniforms.glowRange.value = 1.5;
+                singer.material.uniforms.glowRange.value = 3.0 + midAvg * 3.0;
+                backupSinger1.material.uniforms.glowRange.value = 2.5 + midAvg * 2.0;
+                backupSinger2.material.uniforms.glowRange.value = 2.5 + midAvg * 2.0;
             } else if (timePhase < 0.75) {
                 // Guitarist focus
-                drummer.material.uniforms.glowRange.value = 1.0;
-                guitarist.material.uniforms.glowRange.value = 2.0 + midAvg * 2.0;
-                bassist.material.uniforms.glowRange.value = 1.0;
-                singer.material.uniforms.glowRange.value = 1.0;
-                backupSinger1.material.uniforms.glowRange.value = 0.8;
-                backupSinger2.material.uniforms.glowRange.value = 0.8;
+                drummer.material.uniforms.glowRange.value = 1.5;
+                guitarist.material.uniforms.glowRange.value = 3.0 + midAvg * 3.0;
+                bassist.material.uniforms.glowRange.value = 1.5;
+                singer.material.uniforms.glowRange.value = 1.5;
+                backupSinger1.material.uniforms.glowRange.value = 1.0;
+                backupSinger2.material.uniforms.glowRange.value = 1.0;
             } else {
                 // Bassist focus
-                drummer.material.uniforms.glowRange.value = 1.0;
-                guitarist.material.uniforms.glowRange.value = 1.0;
-                bassist.material.uniforms.glowRange.value = 2.0 + bassAvg * 2.0;
-                singer.material.uniforms.glowRange.value = 1.0;
-                backupSinger1.material.uniforms.glowRange.value = 0.8;
-                backupSinger2.material.uniforms.glowRange.value = 0.8;
+                drummer.material.uniforms.glowRange.value = 1.5;
+                guitarist.material.uniforms.glowRange.value = 1.5;
+                bassist.material.uniforms.glowRange.value = 3.0 + bassAvg * 3.0;
+                singer.material.uniforms.glowRange.value = 1.5;
+                backupSinger1.material.uniforms.glowRange.value = 1.0;
+                backupSinger2.material.uniforms.glowRange.value = 1.0;
             }
         }
         
