@@ -137,13 +137,18 @@ const createBackupSinger = (imagePath, initialPosition) => {
     const backupSinger = new THREE.Mesh(geometry, material);
     
     // Start backup singers off-stage, positioned further back
+    // The X position will be updated during animation.
+    // The Z position is set here relative to the main singer's plane.
     backupSinger.position.set(-15 + initialPosition[0], (MUSICIAN_PLANE_HEIGHT * 0.9) / 2, initialPosition[2] -1.5); 
     scene.add(backupSinger);
     return backupSinger;
 };
 
-const backupSinger1 = createBackupSinger('/backup_singer_female.png', [-1.5, 0, 1]); 
-const backupSinger2 = createBackupSinger('/backup_singer_male.png', [1.5, 0, 1]);  
+// Backup singers - initial positions are for their off-stage starting point.
+// Their final animated positions will be further left/right.
+// Original X positions were -1.5 and 1.5 relative to center. Let's keep initial relative X the same for the off-stage start.
+const backupSinger1 = createBackupSinger('/backup_singer_female.png', [-3.5, 0, 1]); // More left
+const backupSinger2 = createBackupSinger('/backup_singer_male.png', [3.5, 0, 1]);  // More right
 
 // Generic function to create a musician plane
 const createMusicianPlane = (imagePath, initialPosition, isPlaying = false) => {
@@ -210,14 +215,14 @@ function animateBandEntrances() {
             .easing(TWEEN.Easing.Quadratic.Out)
             .start();
             
-        // Animate backup singers
+        // Animate backup singers to their new wider positions
         new TWEEN.Tween(backupSinger1.position)
-            .to({ x: -1.5 }, 2000) 
+            .to({ x: -3.5 }, 2000) // Target more to the left
             .easing(TWEEN.Easing.Quadratic.Out)
             .start();
             
         new TWEEN.Tween(backupSinger2.position)
-            .to({ x: 1.5 }, 2000) 
+            .to({ x: 3.5 }, 2000) // Target more to the right
             .easing(TWEEN.Easing.Quadratic.Out)
             .start();
     }
