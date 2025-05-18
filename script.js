@@ -22,81 +22,168 @@ const musicianFragmentShader = `
     
     varying vec2 vUv;
     
+    // Improved noise function for better organic movement
+    vec2 hash22(vec2 p) {
+        p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+        return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+    }
+    
     float noise(vec2 p) {
-        return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+        const float K1 = 0.366025404;
+        const float K2 = 0.211324865;
+        
+        vec2 i = floor(p + (p.x + p.y) * K1);
+        vec2 a = p - i + (i.x + i.y) * K2;
+        vec2 o = (a.x > a.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+        vec2 b = a - o + K2;
+        vec2 c = a - 1.0 + 2.0 * K2;
+        
+        vec3 h = max(0.5 - vec3(dot(a, a), dot(b, b), dot(c, c)), 0.0);
+        vec3 n = h * h * h * h * vec3(dot(a, hash22(i)), dot(b, hash22(i + o)), dot(c, hash22(i + 1.0)));
+        
+        return dot(n, vec3(70.0));
+    }
+    
+    // Fractional Brownian Motion for the lava lamp effect
+    float fbm(vec2 p) {
+        float value = 0.0;
+        float amplitude = 0.5;
+        float frequency = 1.0;
+        
+        // More octaves = more detail in the lava lamp movement
+        for (int i = 0; i < 5; i++) {
+            value += amplitude * noise(p * frequency);
+            frequency *= 2.2;
+            amplitude *= 0.5;
+        }
+        return value;
+    }
+    
+    // Creates a blob/bubble effect typical of lava lamps
+    float lavaBlobEffect(vec2 uv, float time, float bassIntensity, float midIntensity) {
+        // Offset UVs with time to create upward motion
+        vec2 p = uv;
+        // Vertical upward flow is key for lava lamp effect
+        p.y -= time * (0.1 + bassIntensity * 0.2); 
+        
+        // Create distorted waves with fbm
+        float distortion = fbm(p * 3.0 + vec2(0.0, time * 0.2));
+        distortion += fbm(p * 5.0 - vec2(time * 0.1, 0.0)) * 0.5;
+        
+        // Add music reactivity to the distortion
+        distortion *= (0.5 + bassIntensity * 0.7 + midIntensity * 0.3);
+        
+        return distortion;
     }
     
     void main() {
-        // Sample texture at original UV and multiple surrounding points for glow effect
+        // Sample original texture
         vec4 texColor = texture2D(map, vUv);
         
-        // Create dynamic values based on music
-        float musicPower = bassIntensity * 0.6 + midIntensity * 0.3 + trebleIntensity * 0.2;
-        float expandedRange = glowRange * (1.0 + musicPower * 2.0);
-        float pulseRate = 3.0 + musicPower * 4.0;
-        float pulse = sin(time * pulseRate) * 0.5 + 0.5;
+        // Get music intensity values
+        float musicPower = bassIntensity * 0.7 + midIntensity * 0.4 + trebleIntensity * 0.2;
+        float expandedRange = glowRange * (1.0 + musicPower * 2.5);
         
-        // Create multiple layers of glow with different radiuses
-        vec2 pixelSize = vec2(1.0) / vec2(textureSize(map, 0));
-        float totalGlow = 0.0;
-        float glowAlpha = 0.0;
+        // Scale and offset for lava lamp coordinate system
+        vec2 scaledUV = vUv * vec2(1.0, 1.5); // Slightly stretch vertical for better flow
         
-        // Flowing effect parameters
-        float flowSpeed = time * (1.0 + bassIntensity * 2.0);
-        float flowDirection = sin(time * 0.5) * 0.3;
+        // Create lava lamp blob effect 
+        float lavaDistortion = lavaBlobEffect(scaledUV, time, bassIntensity, midIntensity);
         
-        // Enhanced glow calculation with multiple samples
-        for(float i = 0.0; i < 3.0; i++) {
-            float radius = (0.5 + i * 2.0) * expandedRange * (0.8 + pulse * 0.4);
+        // Create dynamic flowing colors
+        vec3 finalGlowColor = glowColor;
+        
+        // Add color variation based on noise and time
+        finalGlowColor += vec3(
+            sin(lavaDistortion * 3.0 + time) * 0.2, 
+            sin(lavaDistortion * 2.5 + time * 1.2) * 0.2, 
+            sin(lavaDistortion * 2.0 + time * 0.8) * 0.2
+        ) * musicPower;
+        
+        // Detect semi-transparent pixels (outlines)
+        bool isEdge = texColor.a > 0.01 && texColor.a < 0.99;
+        
+        if (isEdge) {
+            // Enhanced edge effect
+            texColor.rgb = mix(texColor.rgb, finalGlowColor * 1.5, 0.7);
+            texColor.a = min(texColor.a + 0.1, 0.95);
+        }
+        
+        // Calculate lava blobs and flowing effect for transparent areas
+        if (texColor.a < 0.95) {
+            vec2 pixelSize = vec2(1.0) / vec2(textureSize(map, 0));
+            float totalLavaEffect = 0.0;
             
-            // Sample in a diamond pattern with flow distortion
-            for(float x = -radius; x <= radius; x += radius * 0.5) {
-                for(float y = -radius; y <= radius; y += radius * 0.5) {
-                    if(abs(x) + abs(y) <= radius * 1.2) {
-                        // Add flowing distortion to sampling coordinates
-                        vec2 flowOffset = vec2(
-                            sin(vUv.y * 10.0 + flowSpeed) * 0.02,
-                            cos(vUv.x * 10.0 + flowSpeed + flowDirection) * 0.02
-                        ) * musicPower;
-                        
-                        vec2 sampleUV = vUv + vec2(x, y) * pixelSize + flowOffset;
-                        vec4 sampleColor = texture2D(map, sampleUV);
-                        
-                        // If we found an edge or semi-transparent pixel
-                        if(sampleColor.a > 0.01 && sampleColor.a < 0.99) {
-                            // Calculate distance-based intensity
-                            float dist = length(vec2(x, y)) / radius;
-                            float intensity = smoothstep(1.0, 0.0, dist) * (1.0 - sampleColor.a) * 1.5;
+            // Search for edges to create flowing effect from
+            for(float radius = 1.0; radius <= expandedRange * 5.0; radius += 2.0) {
+                // Asymmetric sampling for upward flow bias
+                for(float y = -radius; y <= radius * 1.5; y += radius * 0.5) {
+                    for(float x = -radius; x <= radius; x += radius * 0.5) {
+                        if (abs(x) + abs(y) <= radius * 1.5) {
+                            // Sample with upward flow offset
+                            float upwardBias = radius * 0.3 * (1.0 + bassIntensity);
+                            vec2 sampleUV = vUv + vec2(x, y - upwardBias) * pixelSize;
                             
-                            // Add to total glow with noise variation for more organic feel
-                            float noiseVal = noise(vUv * 10.0 + time * vec2(0.1, 0.2));
-                            totalGlow += intensity * (0.8 + noiseVal * 0.4);
-                            glowAlpha += intensity * 0.3;
+                            // Add lava displacement
+                            float bubbleEffect = lavaBlobEffect(sampleUV, time, bassIntensity, midIntensity);
+                            sampleUV += vec2(
+                                sin(bubbleEffect * 6.28 + time) * 0.01 * musicPower,
+                                // Important: This creates the upward flow
+                                (bubbleEffect * 0.02 + 0.01) * musicPower
+                            ) * radius;
+                            
+                            vec4 sampleColor = texture2D(map, sampleUV);
+                            
+                            // If we hit an edge or semi-transparent area
+                            if(sampleColor.a > 0.01 && sampleColor.a < 0.99) {
+                                // Distance falloff creates the gradient effect
+                                float dist = length(vec2(x, y)) / (radius * (1.0 + musicPower));
+                                float falloff = smoothstep(1.0, 0.0, dist);
+                                
+                                // Vertical bias for upward flow - critical for lava lamp
+                                float upwardFlow = smoothstep(0.0, 1.0, (y + radius) / (radius * 2.0));
+                                
+                                // Calculate blob intensity
+                                float blobIntensity = falloff * (0.7 + bubbleEffect * 0.6) * upwardFlow;
+                                
+                                // Add rounded blob effect with noise
+                                float blobShape = sin(bubbleEffect * 6.28) * 0.5 + 0.5;
+                                blobShape *= bubbleEffect * falloff * upwardFlow;
+                                
+                                // Combine for final lava effect
+                                totalLavaEffect += blobIntensity * blobShape * (0.4 + musicPower * 0.8);
+                            }
                         }
                     }
                 }
             }
-        }
-        
-        // Normalize and enhance glow effect
-        totalGlow = min(totalGlow * (1.0 + musicPower * 1.5), 1.0);
-        glowAlpha = min(glowAlpha, 1.0);
-        
-        // Create dynamic flowing glow color with slight hue shift
-        vec3 dynamicGlowColor = glowColor * (0.8 + sin(time * 2.0) * 0.2);
-        dynamicGlowColor += vec3(sin(time + vUv.x * 5.0) * 0.1, sin(time * 1.2 + vUv.y * 5.0) * 0.1, sin(time * 0.8) * 0.1) * musicPower;
-        
-        // Apply strong glow to semi-transparent pixels
-        if(texColor.a < 0.99 && texColor.a > 0.01) {
-            // Enhanced edge glow
-            texColor.rgb = mix(texColor.rgb, dynamicGlowColor * (1.5 + pulse + musicPower), 0.8);
-            texColor.a = min(texColor.a + glowAlpha * 0.8 + musicPower * 0.3, 0.95);
-        }
-        
-        // Apply ambient glow to fully transparent areas
-        if(texColor.a < 0.01 && totalGlow > 0.0) {
-            texColor.rgb = dynamicGlowColor * (1.0 + pulse * 0.5);
-            texColor.a = totalGlow * glowAlpha * (0.3 + musicPower * 0.6);
+            
+            // Normalize and apply the lava lamp effect
+            totalLavaEffect = min(totalLavaEffect * (0.8 + musicPower * 0.6), 1.0);
+            
+            // Create flowing color variation for each blob
+            float colorShift = lavaDistortion * 3.0 + vUv.y * 3.0 - time * 0.5;
+            vec3 lavaColor = finalGlowColor + vec3(
+                sin(colorShift) * 0.3, 
+                sin(colorShift + 2.1) * 0.3, 
+                sin(colorShift + 4.2) * 0.3
+            ) * musicPower;
+            
+            // Only apply lava effect to semi-transparent areas 
+            if (texColor.a < 0.95) {
+                // Lava color blend 
+                vec3 lavaColorWithIntensity = lavaColor * (totalLavaEffect * 1.2);
+                
+                // Add the lava effect to the current color
+                if (isEdge) {
+                    texColor.rgb = mix(texColor.rgb, lavaColorWithIntensity, 0.7);
+                    texColor.a = min(texColor.a + totalLavaEffect * 0.4, 0.95); 
+                } else if (totalLavaEffect > 0.05) {
+                    // For fully transparent areas with lava effect
+                    texColor.rgb = lavaColorWithIntensity;
+                    texColor.a = totalLavaEffect * 0.85;
+                }
+            }
         }
         
         gl_FragColor = texColor;
