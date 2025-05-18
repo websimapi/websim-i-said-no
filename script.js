@@ -95,6 +95,19 @@ stage.position.y = -0.25;
 // stage.receiveShadow = true; 
 scene.add(stage);
 
+// Add drum riser
+const riserTexture = textureLoader.load('/drum_riser.png');
+const riserPlane = new THREE.PlaneGeometry(3, 1.5);
+const riserMaterial = new THREE.MeshBasicMaterial({
+    map: riserTexture,
+    transparent: true,
+    side: THREE.DoubleSide
+});
+const drumRiser = new THREE.Mesh(riserPlane, riserMaterial);
+drumRiser.position.set(-2, 0.4, -2); // Position for the riser
+drumRiser.rotation.x = -Math.PI / 2; // Rotate to lie flat
+scene.add(drumRiser);
+
 // Back wall with lighting effects and curtains
 const backWallGeometry = new THREE.BoxGeometry(14, 8, 0.5);
 const backdropTexture = textureLoader.load('/stage_backdrop.png');
@@ -179,8 +192,8 @@ const guitarist = createMusicianPlane('/guitarist.png', [2, 0, -1], true);
 // Bassist - on-stage from the start and actively playing
 const bassist = createMusicianPlane('/bassist.png', [-2, 0, 0], true);
 
-// Drummer - starts off-stage
-const drummer = createMusicianPlane('/drummer.png', [-15, 0, -2], false);
+// Drummer - starts off-stage and will be positioned on the riser
+const drummer = createMusicianPlane('/drummer.png', [-15, 0.8, -2], false); // Increased Y position by 0.8 for the riser height
 
 // Audio setup
 const audioElement = document.getElementById('music');
@@ -316,7 +329,7 @@ function animateBandEntrances() {
             .easing(TWEEN.Easing.Quadratic.Out)
             .start();
         
-        // Animate drummer coming in
+        // Animate drummer coming in - maintain the elevated Y position
         new TWEEN.Tween(drummer.position)
             .to({ x: -2 }, 1500) 
             .easing(TWEEN.Easing.Quadratic.Out)
@@ -525,7 +538,9 @@ function animateLights(delta) {
         
         // Drummer movement (only if on stage)
         if (drummerEntered) {
-            drummer.position.y = musicianBaseY + Math.sin(time * 8) * 0.15 * bassAvg;
+            // Adjust base Y position to account for riser height
+            const drummerBaseY = musicianBaseY + 0.8; // The 0.8 is the riser height
+            drummer.position.y = drummerBaseY + Math.sin(time * 8) * 0.15 * bassAvg;
             // Add a bit of rotation for the drummer for more dynamism
             drummer.rotation.y = Math.sin(time * 0.5) * 0.1; 
         }
