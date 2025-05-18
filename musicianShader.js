@@ -17,7 +17,7 @@ void main() {
     // Calculate position with some movement based on audio
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
     
-    gl_PointSize = size * (audioIntensity * 0.5 + 0.5) * (300.0 / -mvPosition.z);
+    gl_PointSize = size * (audioIntensity * 0.4 + 0.5) * (250.0 / -mvPosition.z);
     gl_Position = projectionMatrix * mvPosition;
 }
 `;
@@ -47,14 +47,14 @@ void main() {
         distanceToEdge = 1.0 - abs(0.5 - texColor.a) * 2.0;
     }
     
-    // Create the glowing outline effect
-    float glowStrength = smoothstep(0.0, outlineWidth, distanceToEdge) * outlineIntensity;
+    // Create the glowing outline effect - reduced intensity
+    float glowStrength = smoothstep(0.0, outlineWidth, distanceToEdge) * outlineIntensity * 0.7;
     
     // Make the glow pulse with the audio
-    glowStrength *= (1.0 + sin(time * 5.0) * 0.3 * audioIntensity);
+    glowStrength *= (1.0 + sin(time * 5.0) * 0.2 * audioIntensity);
     
-    // Mix the texture color with the outline glow
-    vec3 glowColor = mix(baseColor, baseColor * (1.0 + audioIntensity), 0.5);
+    // Mix the texture color with the outline glow - more subtle
+    vec3 glowColor = mix(baseColor, baseColor * (1.0 + audioIntensity * 0.7), 0.4);
     vec4 finalColor = texColor;
     
     // Add the glow around the edges
@@ -78,15 +78,15 @@ void main() {
     float dist = length(gl_PointCoord - vec2(0.5));
     if (dist > 0.5) discard; // Make particles round
     
-    // Fade out towards edges for soft particles
-    float alpha = 1.0 - smoothstep(0.3, 0.5, dist);
+    // Fade out towards edges for soft particles - more gradual fade
+    float alpha = 1.0 - smoothstep(0.25, 0.5, dist);
     
-    // Create a pulsing effect based on time and audio
-    float pulse = 0.8 + 0.2 * sin(time * 5.0 + vColor.r * 10.0);
-    pulse *= (0.8 + 0.4 * audioIntensity);
+    // Create a pulsing effect based on time and audio - reduced intensity
+    float pulse = 0.6 + 0.2 * sin(time * 5.0 + vColor.r * 10.0);
+    pulse *= (0.7 + 0.3 * audioIntensity);
     
-    // Final color with pulsing alpha
-    gl_FragColor = vec4(vColor * pulse, alpha * pulse);
+    // Final color with pulsing alpha - lower alpha
+    gl_FragColor = vec4(vColor * pulse, alpha * pulse * 0.8);
 }
 `;
 
@@ -114,8 +114,8 @@ class MusicianEffect {
             uniforms: {
                 map: { value: this.musician.material.map },
                 baseColor: { value: this.baseColor },
-                outlineWidth: { value: 0.1 },
-                outlineIntensity: { value: 0.8 },
+                outlineWidth: { value: 0.08 },  // Reduced from 0.1
+                outlineIntensity: { value: 0.6 }, // Reduced from 0.8
                 time: { value: 0 },
                 audioIntensity: { value: 0 }
             },
@@ -132,12 +132,12 @@ class MusicianEffect {
         // Apply the shader material
         this.musician.material = this.outlineShaderMaterial;
         
-        // Create particles emanating from the musician outline
+        // Create particles behind the musician
         this.createParticleSystem();
     }
     
     createParticleSystem() {
-        const particleCount = 500;
+        const particleCount = 350; // Reduced from 500
         const particleGeometry = new THREE.BufferGeometry();
         
         // Get musician dimensions
@@ -149,42 +149,27 @@ class MusicianEffect {
         const colors = new Float32Array(particleCount * 3);
         const sizes = new Float32Array(particleCount);
         
-        // Set initial values - position particles around the outline of the musician
+        // Set initial values - position particles behind the musician 
         for (let i = 0; i < particleCount; i++) {
-            // Choose edge distribution: top, right, bottom, left
-            const edge = Math.random();
-            let x, y;
+            // Position particles more centrally behind the musician instead of just the outline
+            const angle = Math.random() * Math.PI * 2;
+            const radius = Math.random() * width * 0.4; // Smaller radius to keep particles more centralized
             
-            if (edge < 0.25) {
-                // Top edge
-                x = (Math.random() - 0.5) * width * 0.8;
-                y = height / 2 * 0.9;
-            } else if (edge < 0.5) {
-                // Right edge
-                x = width / 2 * 0.8;
-                y = (Math.random() - 0.5) * height * 0.9;
-            } else if (edge < 0.75) {
-                // Bottom edge
-                x = (Math.random() - 0.5) * width * 0.8;
-                y = -height / 2 * 0.9;
-            } else {
-                // Left edge
-                x = -width / 2 * 0.8;
-                y = (Math.random() - 0.5) * height * 0.9;
-            }
+            const x = Math.cos(angle) * radius;
+            const y = (Math.random() - 0.5) * height * 0.8;
             
             // Position relative to the musician's center
             positions[i * 3] = x;
             positions[i * 3 + 1] = y;
-            positions[i * 3 + 2] = 0.1; // Slightly in front of the musician plane
+            positions[i * 3 + 2] = -0.1; // Position particles BEHIND the musician plane
             
-            // Color variation based on base color
-            colors[i * 3] = this.baseColor.r + (Math.random() * 0.2 - 0.1);
-            colors[i * 3 + 1] = this.baseColor.g + (Math.random() * 0.2 - 0.1);
-            colors[i * 3 + 2] = this.baseColor.b + (Math.random() * 0.2 - 0.1);
+            // Color variation based on base color - more subtle
+            colors[i * 3] = this.baseColor.r + (Math.random() * 0.15 - 0.075);
+            colors[i * 3 + 1] = this.baseColor.g + (Math.random() * 0.15 - 0.075);
+            colors[i * 3 + 2] = this.baseColor.b + (Math.random() * 0.15 - 0.075);
             
-            // Random sizes
-            sizes[i] = Math.random() * 5 + 5;
+            // Smaller sizes
+            sizes[i] = Math.random() * 3 + 2; // Reduced from 5+5
         }
         
         particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -212,11 +197,11 @@ class MusicianEffect {
             particleLifetimes: new Float32Array(particleCount)
         };
         
-        // Set initial velocities and lifetimes
+        // Set initial velocities and lifetimes - slower movement
         for (let i = 0; i < particleCount; i++) {
-            this.particleSystem.userData.particleVelocities[i * 3] = (Math.random() - 0.5) * 0.02;
-            this.particleSystem.userData.particleVelocities[i * 3 + 1] = Math.random() * 0.05 + 0.01;
-            this.particleSystem.userData.particleVelocities[i * 3 + 2] = (Math.random() - 0.5) * 0.02;
+            this.particleSystem.userData.particleVelocities[i * 3] = (Math.random() - 0.5) * 0.015;
+            this.particleSystem.userData.particleVelocities[i * 3 + 1] = Math.random() * 0.03 + 0.01;
+            this.particleSystem.userData.particleVelocities[i * 3 + 2] = (Math.random() - 0.5) * 0.015;
             this.particleSystem.userData.particleLifetimes[i] = Math.random() * 2;
         }
         
@@ -233,12 +218,12 @@ class MusicianEffect {
             this.outlineShaderMaterial.uniforms.time.value = time;
             this.outlineShaderMaterial.uniforms.audioIntensity.value = audioData.intensity;
             
-            // Make outline more intense on beats
+            // Make outline more intense on beats - but more subtle
             if (audioData.beatDetected) {
-                this.outlineShaderMaterial.uniforms.outlineIntensity.value = 1.2;
+                this.outlineShaderMaterial.uniforms.outlineIntensity.value = 0.8; // Reduced from 1.2
             } else {
                 this.outlineShaderMaterial.uniforms.outlineIntensity.value = 
-                    0.8 + audioData.bassIntensity * 0.4;
+                    0.6 + audioData.bassIntensity * 0.3; // More subtle variation
             }
         }
         
@@ -262,63 +247,48 @@ class MusicianEffect {
                 // Update lifetime
                 lifetimes[i] -= 0.016; // Roughly based on 60fps
                 
-                // If particle died, respawn it at the musician's silhouette
+                // If particle died, respawn it behind the musician
                 if (lifetimes[i] <= 0) {
-                    // Generate points along the silhouette
-                    const edge = Math.random();
-                    let x, y;
+                    // Generate points more centrally behind the musician
+                    const angle = Math.random() * Math.PI * 2;
+                    const radius = Math.random() * width * 0.4;
                     
-                    if (edge < 0.25) {
-                        // Top edge
-                        x = (Math.random() - 0.5) * width * 0.8;
-                        y = height / 2 * 0.9;
-                    } else if (edge < 0.5) {
-                        // Right edge
-                        x = width / 2 * 0.8;
-                        y = (Math.random() - 0.5) * height * 0.9;
-                    } else if (edge < 0.75) {
-                        // Bottom edge
-                        x = (Math.random() - 0.5) * width * 0.8;
-                        y = -height / 2 * 0.9;
-                    } else {
-                        // Left edge
-                        x = -width / 2 * 0.8;
-                        y = (Math.random() - 0.5) * height * 0.9;
-                    }
+                    const x = Math.cos(angle) * radius;
+                    const y = (Math.random() - 0.5) * height * 0.8;
                     
                     // Set new position
                     positions[i * 3] = x;
                     positions[i * 3 + 1] = y;
-                    positions[i * 3 + 2] = 0.1; // Slightly in front of musician
+                    positions[i * 3 + 2] = -0.1; // Behind musician
                     
-                    // Random new velocity influenced by audio intensity
-                    velocities[i * 3] = (Math.random() - 0.5) * 0.04 * (1 + audioData.intensity);
-                    velocities[i * 3 + 1] = (Math.random() * 0.08 + 0.02) * (1 + audioData.intensity);
-                    velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.04;
+                    // Random new velocity influenced by audio intensity - slower
+                    velocities[i * 3] = (Math.random() - 0.5) * 0.025 * (1 + audioData.intensity);
+                    velocities[i * 3 + 1] = (Math.random() * 0.05 + 0.015) * (1 + audioData.intensity);
+                    velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.02;
                     
                     // Reset lifetime
                     lifetimes[i] = Math.random() * 2 + 1;
                     
-                    // Particle size based on audio
-                    sizes[i] = (Math.random() * 5 + 5) * (1 + audioData.intensity * 0.5);
+                    // Particle size based on audio - smaller
+                    sizes[i] = (Math.random() * 3 + 2) * (1 + audioData.intensity * 0.4);
                 } else {
                     // Update existing particle position
                     positions[i * 3] += velocities[i * 3];
                     positions[i * 3 + 1] += velocities[i * 3 + 1];
                     positions[i * 3 + 2] += velocities[i * 3 + 2];
                     
-                    // Apply some "gravity" effect
-                    velocities[i * 3 + 1] -= 0.0005;
+                    // Apply some "gravity" effect - reduced
+                    velocities[i * 3 + 1] -= 0.0003;
                     
                     // Dampen horizontal movement
                     velocities[i * 3] *= 0.99;
                     velocities[i * 3 + 2] *= 0.99;
                     
-                    // Add some random movement based on audio beat
+                    // Add some random movement based on audio beat - more subtle
                     if (audioData.beatDetected) {
-                        velocities[i * 3] += (Math.random() - 0.5) * 0.02;
-                        velocities[i * 3 + 1] += Math.random() * 0.03;
-                        velocities[i * 3 + 2] += (Math.random() - 0.5) * 0.02;
+                        velocities[i * 3] += (Math.random() - 0.5) * 0.01;
+                        velocities[i * 3 + 1] += Math.random() * 0.02;
+                        velocities[i * 3 + 2] += (Math.random() - 0.5) * 0.01;
                     }
                 }
             }
