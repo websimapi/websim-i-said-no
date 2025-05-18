@@ -187,235 +187,285 @@ const bassist = createMusicianPlane('/bassist.png', [-2, 0, 0], true);
 // Drummer - starts off-stage
 const drummer = createMusicianPlane('/drummer.png', [-15, 0, -2], false);
 
-// Lava shader setup
-const createLavaShader = (baseColor) => {
-    // Custom shader material for lava effect
-    return new THREE.ShaderMaterial({
+// Function to create lava effect for a musician
+const createMusicianLavaEffect = (musician, baseColor) => {
+    // Create a group to hold all effect elements
+    const effectGroup = new THREE.Group();
+    effectGroup.position.copy(musician.position);
+    scene.add(effectGroup);
+    
+    // Initialize particle systems for 3D effect
+    const particleCount = 300;
+    const particleGeometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(particleCount * 3);
+    const offsets = new Float32Array(particleCount);
+    const scales = new Float32Array(particleCount);
+    const angles = new Float32Array(particleCount);
+    
+    // Create particles that follow the outline of the musician silhouette
+    const silhouetteWidth = MUSICIAN_PLANE_WIDTH;
+    const silhouetteHeight = MUSICIAN_PLANE_HEIGHT;
+    
+    // Generate particles around the silhouette perimeter with some randomness
+    for (let i = 0; i < particleCount; i++) {
+        const i3 = i * 3;
+        
+        // Calculate position on the outline with slight randomization
+        let theta;
+        let radius;
+        
+        // Distribute particles along the outline - higher density at outline
+        if (i < particleCount * 0.7) {
+            // 70% of particles follow a humanoid outline shape
+            theta = Math.random() * Math.PI * 2;
+            
+            // Create a more human-like silhouette shape
+            let baseRadius;
+            
+            // Head region (top 25%)
+            if (theta > Math.PI * 1.75 || theta < Math.PI * 0.25) {
+                baseRadius = silhouetteWidth * 0.25;
+            } 
+            // Shoulders (upper sides)
+            else if (theta < Math.PI * 0.6 || theta > Math.PI * 1.4) {
+                baseRadius = silhouetteWidth * 0.4;
+            }
+            // Arms/torso (middle)
+            else if (theta < Math.PI * 1.0) {
+                baseRadius = silhouetteWidth * 0.3 - (Math.abs(theta - Math.PI * 0.8) * 0.2);
+            }
+            // Legs (bottom)
+            else {
+                baseRadius = silhouetteWidth * 0.3 - (Math.abs(theta - Math.PI * 1.2) * 0.2);
+            }
+            
+            // Add some randomness to the radius
+            const variation = Math.random() * 0.1 * baseRadius;
+            radius = baseRadius + variation;
+            
+            // Adjust Y position based on theta to create humanoid shape
+            const normalizedTheta = (theta / (Math.PI * 2));
+            const yOffset = silhouetteHeight * 0.5 - silhouetteHeight * normalizedTheta;
+            
+            positions[i3] = Math.cos(theta) * radius;
+            positions[i3 + 1] = yOffset;
+            positions[i3 + 2] = Math.sin(theta) * radius * 0.3; // Add some depth
+        } else {
+            // Remaining particles are distributed throughout the volume with concentration near silhouette
+            theta = Math.random() * Math.PI * 2;
+            radius = (silhouetteWidth * 0.4) * Math.random();
+            
+            positions[i3] = Math.cos(theta) * radius;
+            positions[i3 + 1] = (Math.random() - 0.5) * silhouetteHeight;
+            positions[i3 + 2] = Math.sin(theta) * radius * 0.5; // More depth for volume particles
+        }
+        
+        // Random offset for animation timing
+        offsets[i] = Math.random();
+        
+        // Random scale for particle size variations
+        scales[i] = 0.05 + Math.random() * 0.15;
+        
+        // Random angle for particle rotation
+        angles[i] = Math.random() * Math.PI * 2;
+    }
+    
+    particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    particleGeometry.setAttribute('offset', new THREE.BufferAttribute(offsets, 1));
+    particleGeometry.setAttribute('scale', new THREE.BufferAttribute(scales, 1));
+    particleGeometry.setAttribute('angle', new THREE.BufferAttribute(angles, 1));
+    
+    // Custom shader material for 3D lava particles
+    const particleMaterial = new THREE.ShaderMaterial({
         uniforms: {
             time: { value: 0 },
             baseColor: { value: new THREE.Color(baseColor) },
             accentColor: { value: new THREE.Color(0xffffff) },
-            noiseIntensity: { value: 0.5 },
-            flowSpeed: { value: 1.0 },
             audioIntensity: { value: 0.0 }
         },
         vertexShader: `
-            varying vec2 vUv;
-            varying vec3 vPosition;
+            uniform float time;
+            uniform float audioIntensity;
+            
+            attribute float offset;
+            attribute float scale;
+            attribute float angle;
+            
+            varying vec3 vColor;
+            varying float vIntensity;
             
             void main() {
-                vUv = uv;
-                vPosition = position;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                // Create the flowing effect
+                vec3 pos = position;
+                
+                // Animation control - outward flow from silhouette
+                float flowSpeed = 1.0 + audioIntensity * 2.0;
+                float life = mod(time * flowSpeed + offset, 1.0);
+                
+                // Flowing outward from silhouette
+                vec3 direction = normalize(position);
+                float flowDistance = 1.0 + audioIntensity * 2.0;
+                
+                // Particles move outward and upward
+                pos += direction * life * flowDistance;
+                pos.y += life * (1.0 + audioIntensity) * 0.8;
+                
+                // Add some swirling motion
+                float swirl = sin(time * 2.0 + offset * 6.28) * 0.1;
+                pos.x += swirl * (1.0 + audioIntensity * 0.5);
+                pos.z += cos(time * 2.0 + offset * 6.28) * 0.1 * (1.0 + audioIntensity * 0.5);
+                
+                // Calculate intensity based on life - fade out
+                vIntensity = (1.0 - life) * (1.0 + audioIntensity);
+                
+                // Size calculation - particles grow then shrink
+                float sizeMultiplier = scale * (1.0 - abs(life * 2.0 - 1.0)) * (1.0 + audioIntensity);
+                
+                // Position in scene
+                vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+                
+                // Base point size but affected by audio intensity
+                gl_PointSize = sizeMultiplier * 35.0 / -mvPosition.z;
+                
+                // Final position
+                gl_Position = projectionMatrix * mvPosition;
+                
+                // Pass color intensity to fragment shader
+                vColor = vec3(vIntensity);
             }
         `,
         fragmentShader: `
-            uniform float time;
             uniform vec3 baseColor;
             uniform vec3 accentColor;
-            uniform float noiseIntensity;
-            uniform float flowSpeed;
             uniform float audioIntensity;
             
-            varying vec2 vUv;
-            varying vec3 vPosition;
-            
-            // Simplex noise function
-            vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-            vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-            vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
-            vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
-            
-            float snoise(vec3 v) {
-                const vec2 C = vec2(1.0/6.0, 1.0/3.0);
-                const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
-                
-                // First corner
-                vec3 i  = floor(v + dot(v, C.yyy));
-                vec3 x0 = v - i + dot(i, C.xxx);
-                
-                // Other corners
-                vec3 g = step(x0.yzx, x0.xyz);
-                vec3 l = 1.0 - g;
-                vec3 i1 = min(g.xyz, l.zxy);
-                vec3 i2 = max(g.xyz, l.zxy);
-                
-                vec3 x1 = x0 - i1 + C.xxx;
-                vec3 x2 = x0 - i2 + C.yyy;
-                vec3 x3 = x0 - D.yyy;
-                
-                // Permutations
-                i = mod289(i);
-                vec4 p = permute(permute(permute(
-                         i.z + vec4(0.0, i1.z, i2.z, 1.0))
-                       + i.y + vec4(0.0, i1.y, i2.y, 1.0))
-                       + i.x + vec4(0.0, i1.x, i2.x, 1.0));
-                       
-                // Gradients
-                float n_ = 0.142857142857;
-                vec3 ns = n_ * D.wyz - D.xzx;
-                
-                vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
-                
-                vec4 x_ = floor(j * ns.z);
-                vec4 y_ = floor(j - 7.0 * x_);
-                
-                vec4 x = x_ *ns.x + ns.yyyy;
-                vec4 y = y_ *ns.x + ns.yyyy;
-                vec4 h = 1.0 - abs(x) - abs(y);
-                
-                vec4 b0 = vec4(x.xy, y.xy);
-                vec4 b1 = vec4(x.zw, y.zw);
-                
-                vec4 s0 = floor(b0)*2.0 + 1.0;
-                vec4 s1 = floor(b1)*2.0 + 1.0;
-                vec4 sh = -step(h, vec4(0.0));
-                
-                vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
-                vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
-                
-                vec3 p0 = vec3(a0.xy, h.x);
-                vec3 p1 = vec3(a0.zw, h.y);
-                vec3 p2 = vec3(a1.xy, h.z);
-                vec3 p3 = vec3(a1.zw, h.w);
-                
-                // Normalise gradients
-                vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
-                p0 *= norm.x;
-                p1 *= norm.y;
-                p2 *= norm.z;
-                p3 *= norm.w;
-                
-                // Mix final noise value
-                vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
-                m = m * m;
-                return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
-            }
+            varying vec3 vColor;
+            varying float vIntensity;
             
             void main() {
-                // Animated noise for lava flow effect
-                float noise1 = snoise(vec3(vUv * 3.0, time * flowSpeed * 0.2)) * 0.5 + 0.5;
-                float noise2 = snoise(vec3(vUv * 5.0, time * flowSpeed * 0.5 + 100.0)) * 0.5 + 0.5;
+                // Create circular particle with soft edge
+                vec2 center = vec2(0.5, 0.5);
+                float dist = distance(gl_PointCoord, center);
                 
-                // Audio-reactive intensity
-                float noiseSum = mix(noise1, noise2, 0.5) * (1.0 + audioIntensity * 2.0);
+                // Discard pixels outside the circle
+                if (dist > 0.5) discard;
                 
-                // Edge detection for outline effect
-                float edge = smoothstep(0.4, 0.6, noiseSum);
+                // Create soft edge
+                float softness = 0.05;
+                float alpha = smoothstep(0.5, 0.5 - softness, dist);
                 
-                // Color mixing based on noise
-                vec3 color = mix(baseColor, accentColor, noise2 * audioIntensity);
+                // Add glow based on distance from center
+                float glow = pow(1.0 - dist * 2.0, 2.0);
                 
-                // Add glow effect
-                float glow = pow(noiseSum, 2.0) * (1.0 + audioIntensity);
-                color += accentColor * glow * 0.5;
+                // Mix colors based on intensity and audio reactivity
+                vec3 glowColor = mix(baseColor, accentColor, glow * vIntensity * (1.0 + audioIntensity));
                 
-                // Create lava-like pulsing and flowing
-                float alpha = smoothstep(0.1, 0.9, noiseSum) * (0.6 + audioIntensity * 0.4);
+                // Make center brighter
+                glowColor += accentColor * pow(glow, 3.0) * (1.0 + audioIntensity * 2.0);
                 
-                gl_FragColor = vec4(color, alpha);
+                // Set final color with alpha
+                gl_FragColor = vec4(glowColor, alpha * vIntensity);
             }
         `,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
         transparent: true,
-        side: THREE.DoubleSide,
-        blending: THREE.AdditiveBlending
+        vertexColors: true
     });
-};
-
-// Function to create lava effect for a musician
-const createMusicianLavaEffect = (musician, baseColor) => {
-    // Create a slightly larger plane for the lava effect
-    const lavaWidth = MUSICIAN_PLANE_WIDTH * 1.15;
-    const lavaHeight = MUSICIAN_PLANE_HEIGHT * 1.15;
-    const lavaGeometry = new THREE.PlaneGeometry(lavaWidth, lavaHeight, 32, 32);
     
-    // Create shader material with unique color
-    const lavaMaterial = createLavaShader(baseColor);
+    const particles = new THREE.Points(particleGeometry, particleMaterial);
+    effectGroup.add(particles);
     
-    // Create mesh and position it slightly behind the musician
-    const lavaEffect = new THREE.Mesh(lavaGeometry, lavaMaterial);
-    lavaEffect.position.z = musician.position.z + 0.01; // Slightly behind
-    lavaEffect.position.y = musician.position.y;
-    lavaEffect.position.x = musician.position.x;
+    // Create a secondary trailing effect with smaller particles
+    const trailCount = 200;
+    const trailGeometry = new THREE.BufferGeometry();
+    const trailPositions = new Float32Array(trailCount * 3);
+    const trailOffsets = new Float32Array(trailCount);
+    const trailScales = new Float32Array(trailCount);
     
-    // Add to scene
-    scene.add(lavaEffect);
-    
-    // Store reference to the musician for position updates
-    lavaEffect.userData.musician = musician;
-    
-    // Add particles for 3D effect
-    const particleCount = 100;
-    const particleGeometry = new THREE.BufferGeometry();
-    const positions = new Float32Array(particleCount * 3);
-    const particleSizes = new Float32Array(particleCount);
-    
-    // Initialize particles around the silhouette
-    for (let i = 0; i < particleCount; i++) {
+    for (let i = 0; i < trailCount; i++) {
         const i3 = i * 3;
-        const angle = Math.random() * Math.PI * 2;
-        const radius = (Math.random() * 0.2) + (lavaWidth / 2) * 0.8;
+        const theta = Math.random() * Math.PI * 2;
+        const radius = silhouetteWidth * 0.45 * Math.random();
         
-        positions[i3] = Math.cos(angle) * radius;
-        positions[i3 + 1] = Math.sin(angle) * radius - lavaHeight * 0.1;
-        positions[i3 + 2] = (Math.random() - 0.5) * 0.5;
+        trailPositions[i3] = Math.cos(theta) * radius;
+        trailPositions[i3 + 1] = (Math.random() - 0.5) * silhouetteHeight;
+        trailPositions[i3 + 2] = Math.sin(theta) * radius * 0.4;
         
-        particleSizes[i] = Math.random() * 0.1 + 0.05;
+        trailOffsets[i] = Math.random();
+        trailScales[i] = 0.03 + Math.random() * 0.07;
     }
     
-    particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    particleGeometry.setAttribute('size', new THREE.BufferAttribute(particleSizes, 1));
+    trailGeometry.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+    trailGeometry.setAttribute('offset', new THREE.BufferAttribute(trailOffsets, 1));
+    trailGeometry.setAttribute('scale', new THREE.BufferAttribute(trailScales, 1));
     
-    // Custom particle shader
-    const particleMaterial = new THREE.ShaderMaterial({
+    // Similar material but with different parameters for trails
+    const trailMaterial = new THREE.ShaderMaterial({
         uniforms: {
             time: { value: 0 },
-            color: { value: new THREE.Color(baseColor) },
+            baseColor: { value: new THREE.Color(baseColor) },
+            accentColor: { value: new THREE.Color(0xffffff) },
             audioIntensity: { value: 0.0 }
         },
         vertexShader: `
             uniform float time;
             uniform float audioIntensity;
-            attribute float size;
-            varying vec3 vColor;
+            
+            attribute float offset;
+            attribute float scale;
+            
+            varying float vIntensity;
             
             void main() {
-                vColor = vec3(1.0);
-                
-                // Animate particles
+                // Create more chaotic trailing effect
                 vec3 pos = position;
                 
-                // Flow upward and outward
-                float life = mod(time * 0.5 + position.x * 0.1 + position.y * 0.1, 1.0);
-                pos.y += life * 1.5 * (1.0 + audioIntensity);
-                pos.x += sin(time + position.y * 2.0) * 0.1 * life;
-                pos.z += cos(time + position.x * 2.0) * 0.1 * life;
+                // Animation with different timing
+                float flowSpeed = 1.2 + audioIntensity * 1.5;
+                float life = mod(time * flowSpeed + offset, 1.0);
                 
-                // Fade out as they move away
-                float scale = size * (1.0 - life) * (1.0 + audioIntensity);
+                // More vertical movement and spread
+                vec3 direction = normalize(position);
+                float flowDistance = 1.5 + audioIntensity;
+                
+                pos += direction * life * flowDistance;
+                pos.y += life * life * 2.0 * (1.0 + audioIntensity);
+                
+                // Add turbulence
+                float turbulence = sin(time * 3.0 + offset * 10.0) * 0.2;
+                pos.x += turbulence * life;
+                pos.z += cos(time * 3.0 + offset * 10.0) * 0.2 * life;
+                
+                vIntensity = (1.0 - life) * (1.0 + audioIntensity * 0.5);
+                
+                // Size calculation - smaller trailing particles
+                float sizeMultiplier = scale * (1.0 - life) * (1.0 + audioIntensity * 0.5);
                 
                 vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-                gl_PointSize = scale * (30.0 / -mvPosition.z);
+                gl_PointSize = sizeMultiplier * 25.0 / -mvPosition.z;
                 gl_Position = projectionMatrix * mvPosition;
             }
         `,
         fragmentShader: `
-            uniform vec3 color;
+            uniform vec3 baseColor;
+            uniform vec3 accentColor;
             uniform float audioIntensity;
-            varying vec3 vColor;
+            
+            varying float vIntensity;
             
             void main() {
-                // Circular particle
-                float r = distance(gl_PointCoord, vec2(0.5));
-                if (r > 0.5) discard;
+                vec2 center = vec2(0.5, 0.5);
+                float dist = distance(gl_PointCoord, center);
                 
-                // Glow intensity based on distance from center
-                float intensity = 0.5 - r;
+                if (dist > 0.5) discard;
                 
-                // Mix with base color
-                vec3 finalColor = mix(color, vec3(1.0), intensity * (1.0 + audioIntensity));
+                float alpha = smoothstep(0.5, 0.2, dist) * vIntensity;
                 
-                gl_FragColor = vec4(finalColor, intensity);
+                // Trails are more base color dominant
+                vec3 finalColor = mix(baseColor, accentColor, dist * vIntensity * 0.5);
+                
+                gl_FragColor = vec4(finalColor, alpha);
             }
         `,
         blending: THREE.AdditiveBlending,
@@ -423,11 +473,76 @@ const createMusicianLavaEffect = (musician, baseColor) => {
         transparent: true
     });
     
-    const particles = new THREE.Points(particleGeometry, particleMaterial);
-    particles.userData.musician = musician;
-    scene.add(particles);
+    const trails = new THREE.Points(trailGeometry, trailMaterial);
+    effectGroup.add(trails);
     
-    return { lavaEffect, particles, baseColor };
+    // Create an outer glow effect
+    const glowGeometry = new THREE.SphereGeometry(silhouetteWidth * 0.6, 16, 16);
+    const glowMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            time: { value: 0 },
+            baseColor: { value: new THREE.Color(baseColor) },
+            audioIntensity: { value: 0.0 }
+        },
+        vertexShader: `
+            uniform float time;
+            uniform float audioIntensity;
+            
+            varying vec3 vPosition;
+            varying vec3 vNormal;
+            
+            void main() {
+                vPosition = position;
+                vNormal = normal;
+                
+                // Apply subtle pulsing based on audio
+                vec3 pos = position;
+                float pulse = sin(time * 2.0) * 0.1 * (1.0 + audioIntensity);
+                pos *= 1.0 + pulse;
+                
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform vec3 baseColor;
+            uniform float audioIntensity;
+            uniform float time;
+            
+            varying vec3 vPosition;
+            varying vec3 vNormal;
+            
+            void main() {
+                // Calculate fresnel effect for edge glow
+                vec3 viewDirection = normalize(-vPosition);
+                float fresnel = 1.0 - max(0.0, dot(viewDirection, vNormal));
+                fresnel = pow(fresnel, 3.0) * (1.0 + audioIntensity);
+                
+                // Pulsing color intensity
+                float pulse = (sin(time * 1.5) * 0.5 + 0.5) * (1.0 + audioIntensity * 0.5);
+                
+                // Final color with fresnel edge highlighting
+                vec3 glowColor = baseColor * 0.5 * pulse;
+                float alpha = fresnel * 0.3 * (0.5 + audioIntensity * 0.5);
+                
+                gl_FragColor = vec4(glowColor, alpha * pulse);
+            }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        side: THREE.BackSide,
+        depthWrite: false
+    });
+    
+    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+    effectGroup.add(glow);
+    
+    return { 
+        effectGroup, 
+        particles, 
+        trails, 
+        glow, 
+        baseColor 
+    };
 };
 
 // Initialize lava effects for all musicians
@@ -436,8 +551,7 @@ const lavaEffects = [];
 function initializeLavaEffects() {
     // Clear any existing effects first
     for (const effect of lavaEffects) {
-        if (effect.lavaEffect) scene.remove(effect.lavaEffect);
-        if (effect.particles) scene.remove(effect.particles);
+        if (effect.effectGroup) scene.remove(effect.effectGroup);
     }
     lavaEffects.length = 0;
     
@@ -781,7 +895,7 @@ function animateLights(delta) {
     }
 }
 
-// Lava animation function
+// Update lava animation function
 function updateLavaEffects(delta, bassAvg, midAvg, highAvg) {
     for (let i = 0; i < lavaEffects.length; i++) {
         const effect = lavaEffects[i];
@@ -807,24 +921,27 @@ function updateLavaEffects(delta, bassAvg, midAvg, highAvg) {
         // Only show effects for musicians that are on stage
         const isOnStage = Math.abs(musician.mesh.position.x) < 10;
         
-        // Update lava effect position to follow musician
-        effect.lavaEffect.position.copy(musician.mesh.position);
-        effect.lavaEffect.position.z -= 0.01; // Slightly behind
+        // Update effect group position to follow musician
+        effect.effectGroup.position.copy(musician.mesh.position);
         
-        // Update particles position
-        effect.particles.position.copy(musician.mesh.position);
+        // Update shader uniforms for all components
+        if (effect.particles) {
+            effect.particles.material.uniforms.time.value = time;
+            effect.particles.material.uniforms.audioIntensity.value = isOnStage ? audioIntensity : 0;
+        }
         
-        // Update shader uniforms
-        effect.lavaEffect.material.uniforms.time.value = time;
-        effect.lavaEffect.material.uniforms.audioIntensity.value = isOnStage ? audioIntensity : 0;
-        effect.lavaEffect.material.uniforms.flowSpeed.value = 1.0 + audioIntensity;
+        if (effect.trails) {
+            effect.trails.material.uniforms.time.value = time;
+            effect.trails.material.uniforms.audioIntensity.value = isOnStage ? audioIntensity : 0;
+        }
         
-        effect.particles.material.uniforms.time.value = time;
-        effect.particles.material.uniforms.audioIntensity.value = isOnStage ? audioIntensity : 0;
+        if (effect.glow) {
+            effect.glow.material.uniforms.time.value = time;
+            effect.glow.material.uniforms.audioIntensity.value = isOnStage ? audioIntensity : 0;
+        }
         
-        // Set opacity based on whether musician is on stage
-        effect.lavaEffect.material.opacity = isOnStage ? 1.0 : 0;
-        effect.particles.material.opacity = isOnStage ? 1.0 : 0;
+        // Set visibility based on whether musician is on stage
+        effect.effectGroup.visible = isOnStage;
     }
 }
 
