@@ -101,6 +101,9 @@ const backWall = new THREE.Mesh(backWallGeometry, backWallMaterial);
 backWall.position.set(0, 4, -4);
 scene.add(backWall);
 
+const MUSICIAN_PLANE_WIDTH = 1.8;
+const MUSICIAN_PLANE_HEIGHT = 3;
+
 // Create singer using textured plane
 const createSinger = () => {
     const singerTexture = textureLoader.load('/singer.png');
@@ -109,65 +112,73 @@ const createSinger = () => {
         transparent: true,
         side: THREE.DoubleSide
     });
-    const singerGeometry = new THREE.PlaneGeometry(1.8, 3);
-    const singer = new THREE.Mesh(singerGeometry, singerMaterial);
-    singer.position.set(0, 1.5, 0);
+    const singerGeometry = new THREE.PlaneGeometry(MUSICIAN_PLANE_WIDTH, MUSICIAN_PLANE_HEIGHT);
+    const singerMesh = new THREE.Mesh(singerGeometry, singerMaterial);
+    singerMesh.position.set(0, MUSICIAN_PLANE_HEIGHT / 2, 0);
     
     // Create microphone
     const micStandGeometry = new THREE.CylinderGeometry(0.02, 0.02, 1.5, 8);
     const micStandMaterial = new THREE.MeshPhongMaterial({ color: 0xaaaaaa });
     const micStand = new THREE.Mesh(micStandGeometry, micStandMaterial);
-    micStand.position.set(0.4, 0, 0.1);
-    singer.add(micStand);
+    micStand.position.set(0.4, 0, 0.1); // Relative to singer's plane center
+    singerMesh.add(micStand);
 
     const micHeadGeometry = new THREE.SphereGeometry(0.08, 16, 16);
     const micHeadMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
     const micHead = new THREE.Mesh(micHeadGeometry, micHeadMaterial);
-    micHead.position.set(0.4, 0.75, 0.1);
-    singer.add(micHead);
+    micHead.position.set(0.4, 0.75, 0.1); // Relative to singer's plane center
+    singerMesh.add(micHead);
     
-    // Start singer off-stage (will come in at 30 seconds)
-    singer.position.x = -15;
+    // Start singer off-stage (will come in at 27.5 seconds)
+    singerMesh.position.x = -15;
     
-    scene.add(singer);
-    return singer;
+    scene.add(singerMesh);
+    return singerMesh;
 };
 
 const singer = createSinger();
 
 // Create backup singers
 const createBackupSinger = (position, color) => {
-    const singerGeometry = new THREE.CapsuleGeometry(0.25, 1.2, 4, 8);
+    const singerGeometry = new THREE.CapsuleGeometry(0.25, 1.2, 4, 8); // Capsule height 1.2 + 0.25*2 = 1.7
     const singerMaterial = new THREE.MeshPhongMaterial({ color });
     const backupSinger = new THREE.Mesh(singerGeometry, singerMaterial);
     
     // Start backup singers off-stage
-    backupSinger.position.set(-15 + position[0], position[1], position[2]); 
-    backupSinger.position.y += 0.85;
+    backupSinger.position.set(-15 + position[0], 1.7 / 2, position[2]); // Position Y is half height for feet on ground
     scene.add(backupSinger);
     return backupSinger;
 };
 
-const backupSinger1 = createBackupSinger([-1, 0, 1], 0xff69b4);
-const backupSinger2 = createBackupSinger([1, 0, 1], 0xda70d6);
+const backupSinger1 = createBackupSinger([-1, 0, 1], 0xff69b4); // Position interpreted as (x, 0 on stage, z)
+const backupSinger2 = createBackupSinger([1, 0, 1], 0xda70d6);  // Position interpreted as (x, 0 on stage, z)
 
-// Create band members
-const createBandMember = (color, position, isPlaying = false) => {
-    const memberGeometry = new THREE.CapsuleGeometry(0.25, 1.2, 4, 8);
-    const memberMaterial = new THREE.MeshPhongMaterial({ color });
-    const member = new THREE.Mesh(memberGeometry, memberMaterial);
-    member.position.set(...position);
-    member.position.y += 0.85;
-    member.userData.isPlaying = isPlaying; // Track if this member is actively playing
-    scene.add(member);
-    return member;
+
+// Generic function to create a musician plane
+const createMusicianPlane = (imagePath, initialPosition, isPlaying = false) => {
+    const texture = textureLoader.load(imagePath);
+    const material = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        side: THREE.DoubleSide,
+    });
+    const geometry = new THREE.PlaneGeometry(MUSICIAN_PLANE_WIDTH, MUSICIAN_PLANE_HEIGHT);
+    const musician = new THREE.Mesh(geometry, material);
+    musician.position.set(initialPosition[0], MUSICIAN_PLANE_HEIGHT / 2, initialPosition[2]);
+    musician.userData.isPlaying = isPlaying;
+    scene.add(musician);
+    return musician;
 };
 
+// Guitarist - on-stage from the start and actively playing
+const guitarist = createMusicianPlane('/guitarist.png', [2, 0, -1], true);
+
+// Bassist - on-stage from the start and actively playing
+const bassist = createMusicianPlane('/bassist.png', [-2, 0, 0], true);
+
 // Drummer - starts off-stage
-const drummer = createBandMember(0xff6347, [-15, 0, -2], false);
-// Guitarist and bassist are on-stage from the start and actively playing
-const guitarist = createBandMember(0x4169e1, [2, 0, -1], true);
-const bassist = createBandMember(0x32cd32, [-2, 0, 0], true);
+const drummer = createMusicianPlane('/drummer.png', [-15, 0, -2], false);
+
 
 // Create a drum set (simplified)
 const createDrumSet = () => {
@@ -196,7 +207,7 @@ const createDrumSet = () => {
     drumSet.add(cymbal);
     
     // Position the entire drum set off-stage initially
-    drumSet.position.set(-15, 0, -2);
+    drumSet.position.set(-15, 0, -2); // Base of drumset on stage floor
     
     scene.add(drumSet);
     return drumSet;
@@ -238,15 +249,18 @@ const createGuitar = (color, position, scale = 1) => {
     }
     
     guitar.scale.set(scale, scale, scale);
-    guitar.position.set(...position);
+    guitar.position.set(...position); // position is absolute world coords
     scene.add(guitar);
     return guitar;
 };
 
-const guitar = createGuitar(0xdc143c, [2, 1, -1], 1.2);
+// Guitar positions might need fine-tuning relative to the new musician planes.
+// Original musician capsule centers were at y=0.85. New plane centers at y=1.5.
+// Guitars are positioned independently.
+const guitar = createGuitar(0xdc143c, [2, 1, -0.85], 1.2); // Adjusted z slightly forward
 guitar.rotation.z = Math.PI / 4;
 
-const bass = createGuitar(0x000080, [-2, 1, 0], 1.3);
+const bass = createGuitar(0x000080, [-2, 1, -0.15], 1.3); // Adjusted z slightly forward
 bass.rotation.z = Math.PI / 4;
 
 // Audio setup
@@ -284,18 +298,18 @@ function animateBandEntrances() {
         singerEntered = true;
         
         // Animate singer coming in from off-stage
-        const singerTween = new TWEEN.Tween(singer.position)
+        new TWEEN.Tween(singer.position)
             .to({ x: 0 }, 2000)
             .easing(TWEEN.Easing.Quadratic.Out)
             .start();
             
         // Animate backup singers
-        const backup1Tween = new TWEEN.Tween(backupSinger1.position)
+        new TWEEN.Tween(backupSinger1.position)
             .to({ x: -1 }, 2000)
             .easing(TWEEN.Easing.Quadratic.Out)
             .start();
             
-        const backup2Tween = new TWEEN.Tween(backupSinger2.position)
+        new TWEEN.Tween(backupSinger2.position)
             .to({ x: 1 }, 2000)
             .easing(TWEEN.Easing.Quadratic.Out)
             .start();
@@ -306,14 +320,14 @@ function animateBandEntrances() {
         drummerEntered = true;
         
         // Animate drummer coming in
-        const drummerTween = new TWEEN.Tween(drummer.position)
-            .to({ x: -2 }, 1500)
+        new TWEEN.Tween(drummer.position)
+            .to({ x: -2 }, 1500) // Drummer plane target X
             .easing(TWEEN.Easing.Quadratic.Out)
             .start();
             
         // Animate drum set coming in
-        const drumSetTween = new TWEEN.Tween(drumSet.position)
-            .to({ x: -2 }, 1500)
+        new TWEEN.Tween(drumSet.position)
+            .to({ x: -2 }, 1500) // Drum set target X, should align with drummer
             .easing(TWEEN.Easing.Quadratic.Out)
             .start();
     }
@@ -321,15 +335,17 @@ function animateBandEntrances() {
 
 // Specialized animation function for guitarist and bassist in first 25 seconds
 function animateMusiciansFirstSegment(time, bassAvg, midAvg) {
+    const musicianBaseY = MUSICIAN_PLANE_HEIGHT / 2; // Base y position for plane centers
+
     // More energetic movements for guitarist and bassist in the first 25 seconds
     if (currentPlayTime < 25) {
         // Guitarist energetic playing
-        guitarist.position.y = 0.85 + Math.sin(time * 5) * 0.15 * midAvg;
+        guitarist.position.y = musicianBaseY + Math.sin(time * 5) * 0.15 * midAvg;
         guitarist.rotation.x = Math.sin(time * 4) * 0.1 * midAvg;
         guitar.rotation.z = Math.PI / 4 + Math.sin(time * 6) * 0.2 * midAvg;
         
         // Bassist movement timed with bass notes
-        bassist.position.y = 0.85 + Math.sin(time * 3) * 0.12 * bassAvg;
+        bassist.position.y = musicianBaseY + Math.sin(time * 3) * 0.12 * bassAvg;
         bassist.rotation.x = Math.sin(time * 2.5) * 0.08 * bassAvg;
         bass.rotation.z = Math.PI / 4 + Math.sin(time * 3.5) * 0.15 * bassAvg;
         
@@ -352,15 +368,17 @@ function animateMusiciansFirstSegment(time, bassAvg, midAvg) {
         }
         
         // Regular musician animations after 25 seconds
-        guitarist.position.y = 0.85 + Math.sin(time * 2) * 0.1 * midAvg;
-        bassist.position.y = 0.85 + Math.sin(time * 4) * 0.1 * bassAvg;
+        guitarist.position.y = musicianBaseY + Math.sin(time * 2) * 0.1 * midAvg;
+        bassist.position.y = musicianBaseY + Math.sin(time * 4) * 0.1 * bassAvg;
     }
 }
 
 // Light animation
 function animateLights(delta) {
     time += delta;
-    
+    const musicianBaseY = MUSICIAN_PLANE_HEIGHT / 2; // Base y position for plane centers
+    const backupSingerBaseY = 1.7 / 2; // Base y for backup singer capsules
+
     // Animate moving lights
     movingLights.forEach((light, i) => {
         const angle = time * 0.5 + (i / movingLights.length) * Math.PI * 2;
@@ -396,17 +414,19 @@ function animateLights(delta) {
         
         // Make singer move slightly with music (only if they're on stage)
         if (singerEntered) {
-            singer.position.y = 1.5 + Math.sin(time * 3) * 0.1 * midAvg;
+            singer.position.y = musicianBaseY + Math.sin(time * 3) * 0.1 * midAvg;
             singer.rotation.z = Math.sin(time * 2) * 0.05 * midAvg;
             
             // Backup singers movement
-            backupSinger1.position.y = 0.85 + Math.sin(time * 3 + 0.5) * 0.1 * midAvg;
-            backupSinger2.position.y = 0.85 + Math.sin(time * 3 + 1) * 0.1 * midAvg;
+            backupSinger1.position.y = backupSingerBaseY + Math.sin(time * 3 + 0.5) * 0.1 * midAvg;
+            backupSinger2.position.y = backupSingerBaseY + Math.sin(time * 3 + 1) * 0.1 * midAvg;
         }
         
         // Drummer movement (only if on stage)
         if (drummerEntered) {
-            drummer.position.y = 0.85 + Math.sin(time * 8) * 0.15 * bassAvg;
+            drummer.position.y = musicianBaseY + Math.sin(time * 8) * 0.15 * bassAvg;
+            // Add a bit of rotation for the drummer for more dynamism
+            drummer.rotation.y = Math.sin(time * 0.5) * 0.1; // Gentle sway
         }
     }
 }
@@ -465,13 +485,51 @@ const loading = document.getElementById('loading');
 
 // Hide loading screen when everything is ready
 window.addEventListener('load', () => {
+    // A small delay to ensure all assets might be starting to load
     setTimeout(() => {
+        const allMedia = Array.from(document.querySelectorAll('audio, video, img'));
+        let loadedCount = 0;
+        const totalMedia = allMedia.length;
+
+        if (totalMedia === 0) {
+            hideLoadingScreen();
+            return;
+        }
+
+        allMedia.forEach(media => {
+            if (media.complete || media.readyState >= 2 || media.tagName !== 'IMG' && media.tagName !== 'AUDIO' && media.tagName !== 'VIDEO') { // Check if already loaded or not a type we explicitly check
+                loadedCount++;
+                if (loadedCount === totalMedia) hideLoadingScreen();
+            } else {
+                media.addEventListener('loadeddata', checkAllLoaded); // For audio/video
+                media.addEventListener('load', checkAllLoaded);       // For images
+                media.addEventListener('error', checkAllLoaded);      // Also count errors as "done loading"
+            }
+        });
+
+        function checkAllLoaded() {
+            loadedCount++;
+            if (loadedCount === totalMedia) {
+                hideLoadingScreen();
+            }
+        }
+        
+        // Fallback timeout in case some events don't fire
+        setTimeout(hideLoadingScreen, 5000);
+
+
+    }, 500); // Initial small delay
+});
+
+function hideLoadingScreen() {
+    if (loading.style.opacity !== "0") { // prevent multiple calls
         loading.style.opacity = 0;
         setTimeout(() => {
             loading.style.display = 'none';
-        }, 1000);
-    }, 1000);
-});
+        }, 1000); // Match CSS transition
+    }
+}
+
 
 // Start animation
 animate();
