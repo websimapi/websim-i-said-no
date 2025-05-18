@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-// Define the shader for the musician glow effect
+// Define the shader for the musician glow effect - optimized version
 const musicianVertexShader = `
     varying vec2 vUv;
     void main() {
@@ -22,56 +22,54 @@ const musicianFragmentShader = `
     
     varying vec2 vUv;
     
-    // Improved noise function for better organic movement
+    // Optimized hash function
     vec2 hash22(vec2 p) {
-        p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
-        return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+        vec3 p3 = fract(vec3(p.xyx) * vec3(443.897, 441.423, 437.195));
+        p3 += dot(p3, p3.yzx + 19.19);
+        return fract((p3.xx + p3.yz) * p3.zy) * 2.0 - 1.0;
     }
     
+    // Optimized noise function
     float noise(vec2 p) {
-        const float K1 = 0.366025404;
-        const float K2 = 0.211324865;
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        f = f*f*(3.0-2.0*f); // Smoother interpolation
         
-        vec2 i = floor(p + (p.x + p.y) * K1);
-        vec2 a = p - i + (i.x + i.y) * K2;
-        vec2 o = (a.x > a.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
-        vec2 b = a - o + K2;
-        vec2 c = a - 1.0 + 2.0 * K2;
+        float n = mix(
+            mix(dot(hash22(i), f),
+                dot(hash22(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0)), f.x),
+            mix(dot(hash22(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0)),
+                dot(hash22(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0)), f.x),
+            f.y);
         
-        vec3 h = max(0.5 - vec3(dot(a, a), dot(b, b), dot(c, c)), 0.0);
-        vec3 n = h * h * h * h * vec3(dot(a, hash22(i)), dot(b, hash22(i + o)), dot(c, hash22(i + 1.0)));
-        
-        return dot(n, vec3(70.0));
+        return 0.5 + 0.5 * n;
     }
     
-    // Fractional Brownian Motion for the lava lamp effect
+    // Simplified FBM with fewer octaves
     float fbm(vec2 p) {
         float value = 0.0;
         float amplitude = 0.5;
         float frequency = 1.0;
         
-        // More octaves = more detail in the lava lamp movement
-        for (int i = 0; i < 5; i++) {
+        // Reduced from 5 to 3 octaves
+        for (int i = 0; i < 3; i++) {
             value += amplitude * noise(p * frequency);
-            frequency *= 2.2;
+            frequency *= 2.0;
             amplitude *= 0.5;
         }
         return value;
     }
     
-    // Creates a blob/bubble effect typical of lava lamps
-    float lavaBlobEffect(vec2 uv, float time, float bassIntensity, float midIntensity) {
-        // Offset UVs with time to create upward motion
+    // Optimized lava blob effect
+    float lavaBlobEffect(vec2 uv, float t, float bassInt, float midInt) {
+        // Simplified calculation with fewer layers
         vec2 p = uv;
-        // Vertical upward flow is key for lava lamp effect
-        p.y -= time * (0.1 + bassIntensity * 0.2); 
+        p.y -= t * 0.12 * (1.0 + bassInt);
         
-        // Create distorted waves with fbm
-        float distortion = fbm(p * 3.0 + vec2(0.0, time * 0.2));
-        distortion += fbm(p * 5.0 - vec2(time * 0.1, 0.0)) * 0.5;
+        float distortion = fbm(p * 2.5 + vec2(0.0, t * 0.15));
         
-        // Add music reactivity to the distortion
-        distortion *= (0.5 + bassIntensity * 0.7 + midIntensity * 0.3);
+        // Add music reactivity
+        distortion *= (0.5 + bassInt * 0.6 + midInt * 0.3);
         
         return distortion;
     }
@@ -82,18 +80,16 @@ const musicianFragmentShader = `
         
         // Get music intensity values
         float musicPower = bassIntensity * 0.7 + midIntensity * 0.4 + trebleIntensity * 0.2;
-        float expandedRange = glowRange * (1.0 + musicPower * 2.5);
         
-        // Scale and offset for lava lamp coordinate system
-        vec2 scaledUV = vUv * vec2(1.0, 1.5); // Slightly stretch vertical for better flow
+        // Expand the range significantly for more 3D-like extension
+        float expandedRange = glowRange * (1.0 + musicPower * 4.0);
         
-        // Create lava lamp blob effect 
+        // Create lava lamp blob effect
+        vec2 scaledUV = vUv * vec2(1.0, 1.5);
         float lavaDistortion = lavaBlobEffect(scaledUV, time, bassIntensity, midIntensity);
         
-        // Create dynamic flowing colors
+        // Dynamic flowing colors
         vec3 finalGlowColor = glowColor;
-        
-        // Add color variation based on noise and time
         finalGlowColor += vec3(
             sin(lavaDistortion * 3.0 + time) * 0.2, 
             sin(lavaDistortion * 2.5 + time * 1.2) * 0.2, 
@@ -109,59 +105,68 @@ const musicianFragmentShader = `
             texColor.a = min(texColor.a + 0.1, 0.95);
         }
         
-        // Calculate lava blobs and flowing effect for transparent areas
+        // Calculate extended 3D lava effect
         if (texColor.a < 0.95) {
-            vec2 pixelSize = vec2(1.0) / vec2(textureSize(map, 0));
+            // Calculate distance from nearest edge (optimization: fixed sampling pattern instead of loops)
             float totalLavaEffect = 0.0;
+            vec2 pixelSize = vec2(1.0) / vec2(textureSize(map, 0));
             
-            // Search for edges to create flowing effect from
-            for(float radius = 1.0; radius <= expandedRange * 5.0; radius += 2.0) {
-                // Asymmetric sampling for upward flow bias
-                for(float y = -radius; y <= radius * 1.5; y += radius * 0.5) {
-                    for(float x = -radius; x <= radius; x += radius * 0.5) {
-                        if (abs(x) + abs(y) <= radius * 1.5) {
-                            // Sample with upward flow offset
-                            float upwardBias = radius * 0.3 * (1.0 + bassIntensity);
-                            vec2 sampleUV = vUv + vec2(x, y - upwardBias) * pixelSize;
-                            
-                            // Add lava displacement
-                            float bubbleEffect = lavaBlobEffect(sampleUV, time, bassIntensity, midIntensity);
-                            sampleUV += vec2(
-                                sin(bubbleEffect * 6.28 + time) * 0.01 * musicPower,
-                                // Important: This creates the upward flow
-                                (bubbleEffect * 0.02 + 0.01) * musicPower
-                            ) * radius;
-                            
-                            vec4 sampleColor = texture2D(map, sampleUV);
-                            
-                            // If we hit an edge or semi-transparent area
-                            if(sampleColor.a > 0.01 && sampleColor.a < 0.99) {
-                                // Distance falloff creates the gradient effect
-                                float dist = length(vec2(x, y)) / (radius * (1.0 + musicPower));
-                                float falloff = smoothstep(1.0, 0.0, dist);
-                                
-                                // Vertical bias for upward flow - critical for lava lamp
-                                float upwardFlow = smoothstep(0.0, 1.0, (y + radius) / (radius * 2.0));
-                                
-                                // Calculate blob intensity
-                                float blobIntensity = falloff * (0.7 + bubbleEffect * 0.6) * upwardFlow;
-                                
-                                // Add rounded blob effect with noise
-                                float blobShape = sin(bubbleEffect * 6.28) * 0.5 + 0.5;
-                                blobShape *= bubbleEffect * falloff * upwardFlow;
-                                
-                                // Combine for final lava effect
-                                totalLavaEffect += blobIntensity * blobShape * (0.4 + musicPower * 0.8);
-                            }
-                        }
-                    }
+            // Extended 3D projection parameters
+            float depth = 1.0 + musicPower * 2.0;
+            float verticalBias = 1.5 + bassIntensity * 1.0;
+            
+            // Use 8 fixed sampling points instead of nested loops (major optimization)
+            vec2 offsets[8];
+            offsets[0] = vec2(-1.0, -1.0) * expandedRange;
+            offsets[1] = vec2(1.0, -1.0) * expandedRange;
+            offsets[2] = vec2(-1.0, 1.0) * expandedRange;
+            offsets[3] = vec2(1.0, 1.0) * expandedRange;
+            offsets[4] = vec2(0.0, -verticalBias) * expandedRange;
+            offsets[5] = vec2(-verticalBias, 0.0) * expandedRange;
+            offsets[6] = vec2(verticalBias, 0.0) * expandedRange;
+            offsets[7] = vec2(0.0, verticalBias * 0.5) * expandedRange;
+            
+            for (int i = 0; i < 8; i++) {
+                // Apply 3D-like depth projection to sampling offsets
+                vec2 offset = offsets[i];
+                // Make offset magnitude depend on music for 3D pulsing
+                offset *= (1.0 + musicPower * 0.5);
+                
+                // Sample with 3D projection effect
+                vec2 sampleUV = vUv + offset * pixelSize * depth;
+                
+                // Add lava displacement that extends further out
+                float bubbleEffect = lavaBlobEffect(sampleUV, time, bassIntensity, midIntensity);
+                sampleUV += vec2(
+                    sin(bubbleEffect * 6.28 + time) * 0.015 * musicPower,
+                    (bubbleEffect * 0.03 + 0.01) * musicPower  // Stronger upward flow
+                ) * expandedRange;
+                
+                vec4 sampleColor = texture2D(map, sampleUV);
+                
+                // If we hit an edge or semi-transparent area
+                if(sampleColor.a > 0.01 && sampleColor.a < 0.99) {
+                    // Calculate 3D-like effect with stronger vertical bias
+                    float distanceFactor = length(offset) / expandedRange;
+                    float falloff = smoothstep(1.0, 0.0, distanceFactor);
+                    
+                    // Create vertical bias for 3D lava lamp effect
+                    float upwardFlow = smoothstep(0.0, 1.0, (offset.y + expandedRange) / (expandedRange * 2.0));
+                    upwardFlow = pow(upwardFlow, 0.7); // Less harsh falloff
+                    
+                    // 3D blob shape that extends further out
+                    float blobShape = sin(bubbleEffect * 6.28) * 0.5 + 0.5;
+                    blobShape *= bubbleEffect * falloff * upwardFlow;
+                    
+                    // Add bubble's contribution with 3D depth feeling
+                    totalLavaEffect += falloff * blobShape * (0.5 + musicPower);
                 }
             }
             
-            // Normalize and apply the lava lamp effect
-            totalLavaEffect = min(totalLavaEffect * (0.8 + musicPower * 0.6), 1.0);
+            // Extend the effect further outside with music intensity
+            totalLavaEffect = min(totalLavaEffect * (1.0 + musicPower * 1.5), 1.0);
             
-            // Create flowing color variation for each blob
+            // Create flowing color variation with 3D depth perception
             float colorShift = lavaDistortion * 3.0 + vUv.y * 3.0 - time * 0.5;
             vec3 lavaColor = finalGlowColor + vec3(
                 sin(colorShift) * 0.3, 
@@ -169,19 +174,18 @@ const musicianFragmentShader = `
                 sin(colorShift + 4.2) * 0.3
             ) * musicPower;
             
-            // Only apply lava effect to semi-transparent areas 
+            // Only apply lava effect to transparent/semi-transparent areas
             if (texColor.a < 0.95) {
-                // Lava color blend 
-                vec3 lavaColorWithIntensity = lavaColor * (totalLavaEffect * 1.2);
+                // Enhanced 3D lava effect with stronger intensity
+                vec3 lavaColorWithIntensity = lavaColor * (totalLavaEffect * 1.5);
                 
-                // Add the lava effect to the current color
                 if (isEdge) {
                     texColor.rgb = mix(texColor.rgb, lavaColorWithIntensity, 0.7);
-                    texColor.a = min(texColor.a + totalLavaEffect * 0.4, 0.95); 
+                    texColor.a = min(texColor.a + totalLavaEffect * 0.5, 0.95);
                 } else if (totalLavaEffect > 0.05) {
                     // For fully transparent areas with lava effect
                     texColor.rgb = lavaColorWithIntensity;
-                    texColor.a = totalLavaEffect * 0.85;
+                    texColor.a = totalLavaEffect * 0.9; // Stronger alpha for better visibility
                 }
             }
         }
