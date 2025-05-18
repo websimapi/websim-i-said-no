@@ -77,43 +77,81 @@ for (let i = 0; i < 8; i++) {
 
 // Create stage
 const stageGeometry = new THREE.BoxGeometry(12, 0.5, 8);
-const stageMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
+const textureLoader = new THREE.TextureLoader();
+const stageTexture = textureLoader.load('/stage_floor.png');
+stageTexture.wrapS = THREE.RepeatWrapping;
+stageTexture.wrapT = THREE.RepeatWrapping;
+stageTexture.repeat.set(4, 3);
+const stageMaterial = new THREE.MeshPhongMaterial({ map: stageTexture });
 const stage = new THREE.Mesh(stageGeometry, stageMaterial);
 stage.position.y = -0.25;
 stage.receiveShadow = true;
 scene.add(stage);
 
-// Back wall
+// Back wall with lighting effects
 const backWallGeometry = new THREE.BoxGeometry(14, 8, 0.5);
-const backWallMaterial = new THREE.MeshPhongMaterial({ color: 0x111111 });
+const lightingTexture = textureLoader.load('/stage_lights.png');
+const backWallMaterial = new THREE.MeshPhongMaterial({ 
+    color: 0x222222, 
+    emissive: 0x111111,
+    map: lightingTexture,
+    emissiveMap: lightingTexture
+});
 const backWall = new THREE.Mesh(backWallGeometry, backWallMaterial);
 backWall.position.set(0, 4, -4);
 scene.add(backWall);
 
-// Create singer placeholder
-const singerGeometry = new THREE.CapsuleGeometry(0.3, 1.4, 4, 8);
-const singerMaterial = new THREE.MeshPhongMaterial({ color: 0xffd700 });
-const singer = new THREE.Group();
-const singerBody = new THREE.Mesh(singerGeometry, singerMaterial);
-singerBody.position.y = 1;
-singer.add(singerBody);
+// Create singer using textured plane
+const createSinger = () => {
+    const singerTexture = textureLoader.load('/singer.png');
+    const singerMaterial = new THREE.MeshBasicMaterial({
+        map: singerTexture,
+        transparent: true,
+        side: THREE.DoubleSide
+    });
+    const singerGeometry = new THREE.PlaneGeometry(1.8, 3);
+    const singer = new THREE.Mesh(singerGeometry, singerMaterial);
+    singer.position.set(0, 1.5, 0);
+    
+    // Create microphone
+    const micStandGeometry = new THREE.CylinderGeometry(0.02, 0.02, 1.5, 8);
+    const micStandMaterial = new THREE.MeshPhongMaterial({ color: 0xaaaaaa });
+    const micStand = new THREE.Mesh(micStandGeometry, micStandMaterial);
+    micStand.position.set(0.4, 0, 0.1);
+    singer.add(micStand);
 
-// Create microphone
-const micStandGeometry = new THREE.CylinderGeometry(0.02, 0.02, 1.5, 8);
-const micStandMaterial = new THREE.MeshPhongMaterial({ color: 0xaaaaaa });
-const micStand = new THREE.Mesh(micStandGeometry, micStandMaterial);
-micStand.position.set(0.5, 0.75, 0);
-singer.add(micStand);
+    const micHeadGeometry = new THREE.SphereGeometry(0.08, 16, 16);
+    const micHeadMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
+    const micHead = new THREE.Mesh(micHeadGeometry, micHeadMaterial);
+    micHead.position.set(0.4, 0.75, 0.1);
+    singer.add(micHead);
+    
+    // Start singer off-stage (will come in at 30 seconds)
+    singer.position.x = -15;
+    
+    scene.add(singer);
+    return singer;
+};
 
-const micHeadGeometry = new THREE.SphereGeometry(0.08, 16, 16);
-const micHeadMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
-const micHead = new THREE.Mesh(micHeadGeometry, micHeadMaterial);
-micHead.position.set(0.5, 1.5, 0);
-singer.add(micHead);
+const singer = createSinger();
 
-scene.add(singer);
+// Create backup singers
+const createBackupSinger = (position, color) => {
+    const singerGeometry = new THREE.CapsuleGeometry(0.25, 1.2, 4, 8);
+    const singerMaterial = new THREE.MeshPhongMaterial({ color });
+    const backupSinger = new THREE.Mesh(singerGeometry, singerMaterial);
+    
+    // Start backup singers off-stage
+    backupSinger.position.set(-15 + position[0], position[1], position[2]); 
+    backupSinger.position.y += 0.85;
+    scene.add(backupSinger);
+    return backupSinger;
+};
 
-// Create band members (simplified)
+const backupSinger1 = createBackupSinger([-1, 0, 1], 0xff69b4);
+const backupSinger2 = createBackupSinger([1, 0, 1], 0xda70d6);
+
+// Create band members
 const createBandMember = (color, position) => {
     const memberGeometry = new THREE.CapsuleGeometry(0.25, 1.2, 4, 8);
     const memberMaterial = new THREE.MeshPhongMaterial({ color });
@@ -124,7 +162,9 @@ const createBandMember = (color, position) => {
     return member;
 };
 
-const drummer = createBandMember(0xff6347, [-2, 0, -2]);
+// Drummer - starts off-stage
+const drummer = createBandMember(0xff6347, [-15, 0, -2]);
+// Guitarist and bassist are on-stage from the start
 const guitarist = createBandMember(0x4169e1, [2, 0, -1]);
 const bassist = createBandMember(0x32cd32, [-2, 0, 0]);
 
@@ -137,22 +177,25 @@ const createDrumSet = () => {
     bassDrumGeometry.rotateX(Math.PI / 2);
     const bassDrumMaterial = new THREE.MeshPhongMaterial({ color: 0x8b0000 });
     const bassDrum = new THREE.Mesh(bassDrumGeometry, bassDrumMaterial);
-    bassDrum.position.set(-2, 0.4, -2);
+    bassDrum.position.set(0, 0.4, 0);
     drumSet.add(bassDrum);
     
     // Snare
     const snareGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.2, 16);
     const snareMaterial = new THREE.MeshPhongMaterial({ color: 0xdcdcdc });
     const snare = new THREE.Mesh(snareGeometry, snareMaterial);
-    snare.position.set(-1.7, 0.8, -1.7);
+    snare.position.set(0.3, 0.8, 0.3);
     drumSet.add(snare);
     
     // Cymbal
     const cymbalGeometry = new THREE.CylinderGeometry(0.3, 0.3, 0.01, 16);
     const cymbalMaterial = new THREE.MeshPhongMaterial({ color: 0xffd700 });
     const cymbal = new THREE.Mesh(cymbalGeometry, cymbalMaterial);
-    cymbal.position.set(-2.3, 1.2, -1.7);
+    cymbal.position.set(-0.3, 1.2, 0.3);
     drumSet.add(cymbal);
+    
+    // Position the entire drum set off-stage initially
+    drumSet.position.set(-15, 0, -2);
     
     scene.add(drumSet);
     return drumSet;
@@ -160,7 +203,7 @@ const createDrumSet = () => {
 
 const drumSet = createDrumSet();
 
-// Create guitars (simplified)
+// Create guitars
 const createGuitar = (color, position) => {
     const guitar = new THREE.Group();
     
@@ -208,6 +251,55 @@ function setupAudio() {
 // Animation variables
 let isPlaying = false;
 let time = 0;
+let currentPlayTime = 0;
+
+// Band members entrance flags - to prevent multiple triggers
+let singerEntered = false;
+let drummerEntered = false;
+
+// Animation for band member entrances
+function animateBandEntrances() {
+    currentPlayTime = audioElement.currentTime;
+    
+    // Lead singer and backup singers enter at 30 seconds
+    if (currentPlayTime >= 30 && !singerEntered) {
+        singerEntered = true;
+        
+        // Animate singer coming in from off-stage
+        const singerTween = new TWEEN.Tween(singer.position)
+            .to({ x: 0 }, 2000)
+            .easing(TWEEN.Easing.Quadratic.Out)
+            .start();
+            
+        // Animate backup singers
+        const backup1Tween = new TWEEN.Tween(backupSinger1.position)
+            .to({ x: -1 }, 2000)
+            .easing(TWEEN.Easing.Quadratic.Out)
+            .start();
+            
+        const backup2Tween = new TWEEN.Tween(backupSinger2.position)
+            .to({ x: 1 }, 2000)
+            .easing(TWEEN.Easing.Quadratic.Out)
+            .start();
+    }
+    
+    // Drummer enters at 55 seconds
+    if (currentPlayTime >= 55 && !drummerEntered) {
+        drummerEntered = true;
+        
+        // Animate drummer coming in
+        const drummerTween = new TWEEN.Tween(drummer.position)
+            .to({ x: -2 }, 1500)
+            .easing(TWEEN.Easing.Quadratic.Out)
+            .start();
+            
+        // Animate drum set coming in
+        const drumSetTween = new TWEEN.Tween(drumSet.position)
+            .to({ x: -2 }, 1500)
+            .easing(TWEEN.Easing.Quadratic.Out)
+            .start();
+    }
+}
 
 // Light animation
 function animateLights(delta) {
@@ -243,14 +335,24 @@ function animateLights(delta) {
         spotLights[0].intensity = 2 + bassAvg * 5;
         spotLights[1].intensity = 2 + midAvg * 5;
         
-        // Make singer move slightly with music
-        singer.position.y = Math.sin(time * 3) * 0.05 * midAvg;
-        singerBody.rotation.z = Math.sin(time * 2) * 0.1 * midAvg;
+        // Make singer move slightly with music (only if they're on stage)
+        if (singerEntered) {
+            singer.position.y = 1.5 + Math.sin(time * 3) * 0.1 * midAvg;
+            singer.rotation.z = Math.sin(time * 2) * 0.05 * midAvg;
+            
+            // Backup singers movement
+            backupSinger1.position.y = 0.85 + Math.sin(time * 3 + 0.5) * 0.1 * midAvg;
+            backupSinger2.position.y = 0.85 + Math.sin(time * 3 + 1) * 0.1 * midAvg;
+        }
         
-        // Band members movement
-        drummer.position.y = 0.85 + Math.sin(time * 8) * 0.1 * bassAvg;
+        // Guitar and bass player movement
         guitarist.position.y = 0.85 + Math.sin(time * 2) * 0.1 * midAvg;
         bassist.position.y = 0.85 + Math.sin(time * 4) * 0.1 * bassAvg;
+        
+        // Drummer movement (only if on stage)
+        if (drummerEntered) {
+            drummer.position.y = 0.85 + Math.sin(time * 8) * 0.15 * bassAvg;
+        }
     }
 }
 
@@ -264,6 +366,14 @@ function animate() {
     
     // Update controls
     controls.update();
+    
+    // Update TWEEN animations
+    TWEEN.update();
+    
+    // Animate band entrances based on song time
+    if (isPlaying) {
+        animateBandEntrances();
+    }
     
     // Animate scene elements
     animateLights(delta);
@@ -310,4 +420,3 @@ window.addEventListener('load', () => {
 
 // Start animation
 animate();
-
