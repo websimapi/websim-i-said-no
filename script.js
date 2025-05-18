@@ -279,8 +279,8 @@ let drummerEntered = false;
 function animateBandEntrances() {
     currentPlayTime = audioElement.currentTime;
     
-    // Lead singer and backup singers enter at 25 seconds (5 seconds earlier)
-    if (currentPlayTime >= 25 && !singerEntered) {
+    // Lead singer and backup singers enter at 27.5 seconds
+    if (currentPlayTime >= 27.5 && !singerEntered) {
         singerEntered = true;
         
         // Animate singer coming in from off-stage
