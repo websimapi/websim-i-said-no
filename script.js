@@ -14,8 +14,6 @@ camera.position.set(0, 1.5, 5);
 // Renderer setup
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-// renderer.shadowMap.enabled = true; 
-// renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
 renderer.outputEncoding = THREE.sRGBEncoding;
 document.getElementById('container').appendChild(renderer.domElement);
 
@@ -26,12 +24,13 @@ controls.dampingFactor = 0.05;
 controls.minDistance = 3;
 controls.maxDistance = 15;
 controls.maxPolarAngle = Math.PI / 2;
+controls.enabled = false;
 
 // Lights
 const ambientLight = new THREE.AmbientLight(0x555555); 
 scene.add(ambientLight);
 
-// Stage Lighting
+// Enhanced Stage Lighting
 const createSpotlight = (color, intensity, position, target) => {
     const light = new THREE.SpotLight(color, intensity);
     light.position.set(...position);
@@ -39,9 +38,6 @@ const createSpotlight = (color, intensity, position, target) => {
     light.penumbra = 0.3;
     light.decay = 2;
     light.distance = 30;
-    // light.castShadow = true; 
-    // light.shadow.mapSize.width = 1024; 
-    // light.shadow.mapSize.height = 1024; 
     
     if (target) {
         light.target.position.set(...target);
@@ -85,7 +81,6 @@ stageTexture.repeat.set(4, 3);
 const stageMaterial = new THREE.MeshPhongMaterial({ map: stageTexture }); 
 const stage = new THREE.Mesh(stageGeometry, stageMaterial);
 stage.position.y = -0.25;
-// stage.receiveShadow = true; 
 scene.add(stage);
 
 // Back wall with lighting effects and curtains
@@ -116,7 +111,6 @@ const createSinger = () => {
     const singerMesh = new THREE.Mesh(singerGeometry, singerMaterial);
     singerMesh.position.set(0, MUSICIAN_PLANE_HEIGHT / 2, 0);
     
-    // Start singer off-stage (will come in at 27.5 seconds)
     singerMesh.position.x = -15;
     
     scene.add(singerMesh);
@@ -136,19 +130,13 @@ const createBackupSinger = (imagePath, initialPosition) => {
     const geometry = new THREE.PlaneGeometry(MUSICIAN_PLANE_WIDTH * 0.9, MUSICIAN_PLANE_HEIGHT * 0.9); 
     const backupSinger = new THREE.Mesh(geometry, material);
     
-    // Start backup singers off-stage, positioned further back
-    // The X position will be updated during animation.
-    // The Z position is set here relative to the main singer's plane.
     backupSinger.position.set(-15 + initialPosition[0], (MUSICIAN_PLANE_HEIGHT * 0.9) / 2, initialPosition[2] -1.5); 
     scene.add(backupSinger);
     return backupSinger;
 };
 
-// Backup singers - initial positions are for their off-stage starting point.
-// Their final animated positions will be further left/right.
-// Original X positions were -1.5 and 1.5 relative to center. Let's keep initial relative X the same for the off-stage start.
-const backupSinger1 = createBackupSinger('/backup_singer_female.png', [-3.5, 0, 1]); // More left
-const backupSinger2 = createBackupSinger('/backup_singer_male.png', [3.5, 0, 1]);  // More right
+const backupSinger1 = createBackupSinger('/backup_singer_female.png', [-3.5, 0, 1]); 
+const backupSinger2 = createBackupSinger('/backup_singer_male.png', [3.5, 0, 1]);  
 
 // Generic function to create a musician plane
 const createMusicianPlane = (imagePath, initialPosition, isPlaying = false) => {
@@ -174,6 +162,44 @@ const bassist = createMusicianPlane('/bassist.png', [-2, 0, 0], true);
 
 // Drummer - starts off-stage
 const drummer = createMusicianPlane('/drummer.png', [-15, 0, -2], false);
+
+// Define spotlight targets for each musician
+const createTargetedLights = () => {
+    const guitaristLight = createSpotlight(0xff9900, 2.5, [2, 6, 1], [2, 1, -1]);
+    guitaristLight.angle = Math.PI / 8;
+    guitaristLight.penumbra = 0.5;
+    
+    const bassistLight = createSpotlight(0x66ccff, 2.5, [-2, 6, 1], [-2, 1, 0]);
+    bassistLight.angle = Math.PI / 8;
+    bassistLight.penumbra = 0.5;
+    
+    const singerLight = createSpotlight(0xffffff, 3, [0, 6, 1], [0, 1, 0]);
+    singerLight.angle = Math.PI / 7;
+    singerLight.penumbra = 0.4;
+    
+    const drummerLight = createSpotlight(0x9933ff, 2.5, [-2, 6, -1], [-2, 1, -2]);
+    drummerLight.angle = Math.PI / 8;
+    drummerLight.penumbra = 0.5;
+    
+    const backupSinger1Light = createSpotlight(0xff66cc, 1.8, [-3.5, 5.5, 1.5], [-3.5, 1, 1]);
+    backupSinger1Light.angle = Math.PI / 9;
+    backupSinger1Light.penumbra = 0.6;
+    
+    const backupSinger2Light = createSpotlight(0x33cc99, 1.8, [3.5, 5.5, 1.5], [3.5, 1, 1]);
+    backupSinger2Light.angle = Math.PI / 9;
+    backupSinger2Light.penumbra = 0.6;
+    
+    return {
+        guitarist: guitaristLight,
+        bassist: bassistLight,
+        singer: singerLight,
+        drummer: drummerLight,
+        backupSinger1: backupSinger1Light,
+        backupSinger2: backupSinger2Light
+    };
+};
+
+const targetLights = createTargetedLights();
 
 // Audio setup
 const audioElement = document.getElementById('music');
@@ -201,89 +227,194 @@ let currentPlayTime = 0;
 let singerEntered = false;
 let drummerEntered = false;
 
+// Camera animation variables
+let currentCameraTarget = "intro"; 
+let cameraTransitioning = false;
+let transitionStartTime = 0;
+const TRANSITION_DURATION = 2.0; 
+
+// Define camera positions and targets for each focus area
+const cameraPositions = {
+    intro: { position: new THREE.Vector3(0, 2.5, 8), target: new THREE.Vector3(0, 1, 0) },
+    guitarist: { position: new THREE.Vector3(4, 2, 4), target: new THREE.Vector3(2, 1, -1) },
+    bassist: { position: new THREE.Vector3(-4, 2, 4), target: new THREE.Vector3(-2, 1, 0) },
+    singer: { position: new THREE.Vector3(0, 2.2, 3.5), target: new THREE.Vector3(0, 1.5, 0) },
+    singerWide: { position: new THREE.Vector3(0, 2.5, 6), target: new THREE.Vector3(0, 1, 0) },
+    drummer: { position: new THREE.Vector3(-3.5, 2.5, 0), target: new THREE.Vector3(-2, 1, -2) },
+    all: { position: new THREE.Vector3(0, 3, 7), target: new THREE.Vector3(0, 1, -1) }
+};
+
+// Function to smoothly transition camera to new position
+function transitionCamera(newTarget) {
+    if (currentCameraTarget !== newTarget && !cameraTransitioning) {
+        currentCameraTarget = newTarget;
+        cameraTransitioning = true;
+        transitionStartTime = time;
+    }
+}
+
+// Function to update camera position
+function updateCameraPosition() {
+    if (cameraTransitioning) {
+        const timeSinceTransition = time - transitionStartTime;
+        const t = Math.min(timeSinceTransition / TRANSITION_DURATION, 1.0);
+        
+        if (t >= 1.0) {
+            cameraTransitioning = false;
+        }
+        
+        const easedT = 1 - Math.pow(1 - t, 3);
+        
+        const target = cameraPositions[currentCameraTarget];
+        
+        camera.position.lerp(target.position, easedT * 0.05);
+        
+        const lookTarget = new THREE.Vector3();
+        lookTarget.lerp(target.target, easedT * 0.05);
+        camera.lookAt(lookTarget);
+    } else {
+        const target = cameraPositions[currentCameraTarget];
+        camera.position.lerp(target.position, 0.02);
+        camera.lookAt(target.target);
+    }
+}
+
 // Animation for band member entrances
 function animateBandEntrances() {
     currentPlayTime = audioElement.currentTime;
     
-    // Lead singer and backup singers enter at 27.5 seconds
-    if (currentPlayTime >= 27.5 && !singerEntered) {
+    if (currentPlayTime < 10) {
+        if (currentCameraTarget !== "guitarist" && currentPlayTime > 2) {
+            transitionCamera("guitarist");
+            targetLights.guitarist.intensity = 3.5;
+            targetLights.bassist.intensity = 2;
+        }
+    } else if (currentPlayTime < 20) {
+        if (currentCameraTarget !== "bassist" && currentPlayTime > 12) {
+            transitionCamera("bassist");
+            targetLights.guitarist.intensity = 2;
+            targetLights.bassist.intensity = 3.5;
+        }
+    } else if (currentPlayTime < 25) {
+        if (currentCameraTarget !== "guitarist") {
+            transitionCamera("guitarist");
+            targetLights.guitarist.intensity = 3.5;
+            targetLights.bassist.intensity = 2;
+        }
+    }
+    
+    if (currentPlayTime >= 27 && !singerEntered) {
         singerEntered = true;
         
-        // Animate singer coming in from off-stage
         new TWEEN.Tween(singer.position)
             .to({ x: 0 }, 2000)
             .easing(TWEEN.Easing.Quadratic.Out)
             .start();
             
-        // Animate backup singers to their new wider positions
         new TWEEN.Tween(backupSinger1.position)
-            .to({ x: -3.5 }, 2000) // Target more to the left
+            .to({ x: -3.5 }, 2000)
             .easing(TWEEN.Easing.Quadratic.Out)
             .start();
             
         new TWEEN.Tween(backupSinger2.position)
-            .to({ x: 3.5 }, 2000) // Target more to the right
+            .to({ x: 3.5 }, 2000)
             .easing(TWEEN.Easing.Quadratic.Out)
             .start();
+            
+        transitionCamera("singerWide");
+        
+        targetLights.singer.intensity = 4;
+        targetLights.backupSinger1.intensity = 2.5;
+        targetLights.backupSinger2.intensity = 2.5;
+        targetLights.guitarist.intensity = 1.5;
+        targetLights.bassist.intensity = 1.5;
     }
     
-    // Drummer enters at 55 seconds
-    if (currentPlayTime >= 55 && !drummerEntered) {
+    if (currentPlayTime >= 35 && currentPlayTime < 45 && currentCameraTarget !== "singer") {
+        transitionCamera("singer");
+    }
+    
+    if (currentPlayTime >= 45 && currentPlayTime < 55 && currentCameraTarget !== "singerWide") {
+        transitionCamera("singerWide");
+    }
+    
+    if (currentPlayTime >= 54 && !drummerEntered) {
         drummerEntered = true;
         
-        // Animate drummer coming in
         new TWEEN.Tween(drummer.position)
             .to({ x: -2 }, 1500) 
             .easing(TWEEN.Easing.Quadratic.Out)
             .start();
+        
+        transitionCamera("drummer");
+        
+        targetLights.drummer.intensity = 4;
+        targetLights.singer.intensity = 2.5;
+        targetLights.backupSinger1.intensity = 1.5;
+        targetLights.backupSinger2.intensity = 1.5;
+        targetLights.guitarist.intensity = 1.5;
+        targetLights.bassist.intensity = 1.5;
     }
-}
-
-// Specialized animation function for guitarist and bassist in first 25 seconds
-function animateMusiciansFirstSegment(time, bassAvg, midAvg) {
-    const musicianBaseY = MUSICIAN_PLANE_HEIGHT / 2; 
-
-    // More energetic movements for guitarist and bassist in the first 25 seconds
-    if (currentPlayTime < 25) {
-        // Guitarist energetic playing
-        guitarist.position.y = musicianBaseY + Math.sin(time * 5) * 0.15 * midAvg;
-        guitarist.rotation.x = Math.sin(time * 4) * 0.1 * midAvg;
+    
+    if (currentPlayTime >= 65) {
+        const cycleTime = 5; 
+        const cyclePhase = (currentPlayTime - 65) % (cycleTime * 5); 
         
-        // Bassist movement timed with bass notes
-        bassist.position.y = musicianBaseY + Math.sin(time * 3) * 0.12 * bassAvg;
-        bassist.rotation.x = Math.sin(time * 2.5) * 0.08 * bassAvg;
-        
-        // Move camera to focus on guitarist and bassist
-        if (currentPlayTime < 10) {
-            camera.position.lerp(new THREE.Vector3(0, 2, 6), 0.01);
-            camera.lookAt(0, 1, 0);
-        } else if (currentPlayTime < 20) {
-            camera.position.lerp(new THREE.Vector3(3, 2, 4), 0.01);
-            camera.lookAt(guitarist.position);
+        if (cyclePhase < cycleTime) {
+            if (currentCameraTarget !== "all") {
+                transitionCamera("all");
+                
+                targetLights.drummer.intensity = 2.5;
+                targetLights.singer.intensity = 3;
+                targetLights.backupSinger1.intensity = 2;
+                targetLights.backupSinger2.intensity = 2;
+                targetLights.guitarist.intensity = 2.5;
+                targetLights.bassist.intensity = 2.5;
+            }
+        } else if (cyclePhase < cycleTime * 2) {
+            if (currentCameraTarget !== "guitarist") {
+                transitionCamera("guitarist");
+                targetLights.guitarist.intensity = 3.5;
+                targetLights.bassist.intensity = 1.5;
+                targetLights.singer.intensity = 2;
+                targetLights.drummer.intensity = 1.5;
+            }
+        } else if (cyclePhase < cycleTime * 3) {
+            if (currentCameraTarget !== "bassist") {
+                transitionCamera("bassist");
+                targetLights.bassist.intensity = 3.5;
+                targetLights.guitarist.intensity = 1.5;
+                targetLights.singer.intensity = 2;
+                targetLights.drummer.intensity = 1.5;
+            }
+        } else if (cyclePhase < cycleTime * 4) {
+            if (currentCameraTarget !== "singer") {
+                transitionCamera("singer");
+                targetLights.singer.intensity = 4;
+                targetLights.backupSinger1.intensity = 2.5;
+                targetLights.backupSinger2.intensity = 2.5;
+                targetLights.guitarist.intensity = 1.5;
+                targetLights.bassist.intensity = 1.5;
+                targetLights.drummer.intensity = 1.5;
+            }
         } else {
-            camera.position.lerp(new THREE.Vector3(-3, 2, 4), 0.01);
-            camera.lookAt(bassist.position);
+            if (currentCameraTarget !== "drummer") {
+                transitionCamera("drummer");
+                targetLights.drummer.intensity = 3.5;
+                targetLights.singer.intensity = 2;
+                targetLights.guitarist.intensity = 1.5;
+                targetLights.bassist.intensity = 1.5;
+            }
         }
-    } else {
-        // Return to default camera position after 25 seconds
-        if (currentPlayTime < 27) {
-            camera.position.lerp(new THREE.Vector3(0, 1.5, 5), 0.01);
-            camera.lookAt(0, 1, 0);
-        }
-        
-        // Regular musician animations after 25 seconds
-        guitarist.position.y = musicianBaseY + Math.sin(time * 2) * 0.1 * midAvg;
-        bassist.position.y = musicianBaseY + Math.sin(time * 4) * 0.1 * bassAvg;
     }
 }
 
-// Light animation
+// Light animation with enhanced music reactivity
 function animateLights(delta) {
     time += delta;
     const musicianBaseY = MUSICIAN_PLANE_HEIGHT / 2; 
     const backupSingerBaseY = (MUSICIAN_PLANE_HEIGHT * 0.9) / 2; 
 
-    // Animate moving lights
     movingLights.forEach((light, i) => {
         const angle = time * 0.5 + (i / movingLights.length) * Math.PI * 2;
         const x = Math.cos(angle) * 6;
@@ -291,48 +422,57 @@ function animateLights(delta) {
         light.position.set(x, 4 + Math.sin(time * 2 + i) * 0.5, z);
     });
     
-    // Pulse main lights with bass
+    updateCameraPosition();
+    
     if (dataArray && isPlaying) {
         analyser.getByteFrequencyData(dataArray);
         
-        // Get average of bass frequencies
         let bassSum = 0;
         for (let i = 0; i < 10; i++) {
             bassSum += dataArray[i];
         }
         const bassAvg = bassSum / 10 / 255;
         
-        // Get average of mid frequencies
         let midSum = 0;
         for (let i = 10; i < 100; i++) {
             midSum += dataArray[i];
         }
         const midAvg = midSum / 90 / 255;
         
-        // Adjust spotlight intensities based on music
+        let highSum = 0;
+        for (let i = 100; i < 200; i++) {
+            highSum += dataArray[i];
+        }
+        const highAvg = highSum / 100 / 255;
+        
         spotLights[0].intensity = 2 + bassAvg * 5;
         spotLights[1].intensity = 2 + midAvg * 5;
         
-        // Animate musicians based on timeline
-        animateMusiciansFirstSegment(time, bassAvg, midAvg);
+        guitarist.position.y = musicianBaseY + Math.sin(time * 5) * 0.15 * midAvg;
+        guitarist.rotation.x = Math.sin(time * 4) * 0.1 * midAvg;
+        guitarist.rotation.z = Math.cos(time * 2) * 0.05 * highAvg;
         
-        // Make singer move slightly with music (only if they're on stage)
+        bassist.position.y = musicianBaseY + Math.sin(time * 3) * 0.12 * bassAvg;
+        bassist.rotation.x = Math.sin(time * 2.5) * 0.08 * bassAvg;
+        bassist.rotation.z = Math.cos(time * 1.5) * 0.04 * bassAvg;
+        
         if (singerEntered) {
             singer.position.y = musicianBaseY + Math.sin(time * 3) * 0.1 * midAvg;
             singer.rotation.z = Math.sin(time * 2) * 0.05 * midAvg;
             
-            // Backup singers movement
+            singer.position.x = Math.sin(time * 1.2) * 0.1 * midAvg;
+            
             backupSinger1.position.y = backupSingerBaseY + Math.sin(time * 3 + 0.5) * 0.08 * midAvg; 
             backupSinger1.rotation.z = Math.sin(time * 2 + 0.5) * 0.03 * midAvg;
+            
             backupSinger2.position.y = backupSingerBaseY + Math.sin(time * 3 + 1) * 0.08 * midAvg; 
             backupSinger2.rotation.z = Math.sin(time * 2 + 1) * 0.03 * midAvg;
         }
         
-        // Drummer movement (only if on stage)
         if (drummerEntered) {
-            drummer.position.y = musicianBaseY + Math.sin(time * 8) * 0.15 * bassAvg;
-            // Add a bit of rotation for the drummer for more dynamism
-            drummer.rotation.y = Math.sin(time * 0.5) * 0.1; 
+            drummer.position.y = musicianBaseY + Math.sin(time * 8) * 0.2 * bassAvg;
+            drummer.rotation.y = Math.sin(time * 0.5) * 0.1;
+            drummer.rotation.x = Math.sin(time * 5) * 0.15 * bassAvg;
         }
     }
 }
@@ -345,21 +485,18 @@ function animate() {
     
     const delta = clock.getDelta();
     
-    // Update controls
-    controls.update();
+    if (controls.enabled) {
+        controls.update();
+    }
     
-    // Update TWEEN animations
     TWEEN.update();
     
-    // Animate band entrances based on song time
     if (isPlaying) {
         animateBandEntrances();
     }
     
-    // Animate scene elements
     animateLights(delta);
     
-    // Render scene
     renderer.render(scene, camera);
 }
 
@@ -389,9 +526,7 @@ document.getElementById('playBtn').addEventListener('click', () => {
 // Initialize
 const loading = document.getElementById('loading');
 
-// Hide loading screen when everything is ready
 window.addEventListener('load', () => {
-    // A small delay to ensure all assets might be starting to load
     setTimeout(() => {
         const allMedia = Array.from(document.querySelectorAll('audio, video, img'));
         let loadedCount = 0;
@@ -420,10 +555,7 @@ window.addEventListener('load', () => {
             }
         }
         
-        // Fallback timeout in case some events don't fire
         setTimeout(hideLoadingScreen, 5000);
-
-
     }, 500); 
 });
 
@@ -436,6 +568,4 @@ function hideLoadingScreen() {
     }
 }
 
-
-// Start animation
 animate();
