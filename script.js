@@ -109,6 +109,9 @@ scene.add(backWall);
 const MUSICIAN_PLANE_WIDTH = 1.8;
 const MUSICIAN_PLANE_HEIGHT = 3;
 
+// Create musician arrays to easily manage lava effects
+const musicians = [];
+
 // Create singer using textured plane
 const createSinger = () => {
     const singerTexture = textureLoader.load('/singer.png');
@@ -125,6 +128,7 @@ const createSinger = () => {
     singerMesh.position.x = -15;
     
     scene.add(singerMesh);
+    musicians.push({ mesh: singerMesh, type: 'singer' });
     return singerMesh;
 };
 
@@ -146,6 +150,7 @@ const createBackupSinger = (imagePath, initialPosition) => {
     // The Z position is set here relative to the main singer's plane.
     backupSinger.position.set(-15 + initialPosition[0], (MUSICIAN_PLANE_HEIGHT * 0.9) / 2, initialPosition[2] -1.5); 
     scene.add(backupSinger);
+    musicians.push({ mesh: backupSinger, type: 'backup' });
     return backupSinger;
 };
 
@@ -168,6 +173,8 @@ const createMusicianPlane = (imagePath, initialPosition, isPlaying = false) => {
     musician.position.set(initialPosition[0], MUSICIAN_PLANE_HEIGHT / 2, initialPosition[2]);
     musician.userData.isPlaying = isPlaying;
     scene.add(musician);
+    musicians.push({ mesh: musician, type: imagePath.includes('guitarist') ? 'guitarist' : 
+                          imagePath.includes('bassist') ? 'bassist' : 'drummer' });
     return musician;
 };
 
@@ -179,6 +186,277 @@ const bassist = createMusicianPlane('/bassist.png', [-2, 0, 0], true);
 
 // Drummer - starts off-stage
 const drummer = createMusicianPlane('/drummer.png', [-15, 0, -2], false);
+
+// Lava shader setup
+const createLavaShader = (baseColor) => {
+    // Custom shader material for lava effect
+    return new THREE.ShaderMaterial({
+        uniforms: {
+            time: { value: 0 },
+            baseColor: { value: new THREE.Color(baseColor) },
+            accentColor: { value: new THREE.Color(0xffffff) },
+            noiseIntensity: { value: 0.5 },
+            flowSpeed: { value: 1.0 },
+            audioIntensity: { value: 0.0 }
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            varying vec3 vPosition;
+            
+            void main() {
+                vUv = uv;
+                vPosition = position;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform float time;
+            uniform vec3 baseColor;
+            uniform vec3 accentColor;
+            uniform float noiseIntensity;
+            uniform float flowSpeed;
+            uniform float audioIntensity;
+            
+            varying vec2 vUv;
+            varying vec3 vPosition;
+            
+            // Simplex noise function
+            vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+            vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+            vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
+            vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+            
+            float snoise(vec3 v) {
+                const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+                const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+                
+                // First corner
+                vec3 i  = floor(v + dot(v, C.yyy));
+                vec3 x0 = v - i + dot(i, C.xxx);
+                
+                // Other corners
+                vec3 g = step(x0.yzx, x0.xyz);
+                vec3 l = 1.0 - g;
+                vec3 i1 = min(g.xyz, l.zxy);
+                vec3 i2 = max(g.xyz, l.zxy);
+                
+                vec3 x1 = x0 - i1 + C.xxx;
+                vec3 x2 = x0 - i2 + C.yyy;
+                vec3 x3 = x0 - D.yyy;
+                
+                // Permutations
+                i = mod289(i);
+                vec4 p = permute(permute(permute(
+                         i.z + vec4(0.0, i1.z, i2.z, 1.0))
+                       + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+                       + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+                       
+                // Gradients
+                float n_ = 0.142857142857;
+                vec3 ns = n_ * D.wyz - D.xzx;
+                
+                vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+                
+                vec4 x_ = floor(j * ns.z);
+                vec4 y_ = floor(j - 7.0 * x_);
+                
+                vec4 x = x_ *ns.x + ns.yyyy;
+                vec4 y = y_ *ns.x + ns.yyyy;
+                vec4 h = 1.0 - abs(x) - abs(y);
+                
+                vec4 b0 = vec4(x.xy, y.xy);
+                vec4 b1 = vec4(x.zw, y.zw);
+                
+                vec4 s0 = floor(b0)*2.0 + 1.0;
+                vec4 s1 = floor(b1)*2.0 + 1.0;
+                vec4 sh = -step(h, vec4(0.0));
+                
+                vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+                vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+                
+                vec3 p0 = vec3(a0.xy, h.x);
+                vec3 p1 = vec3(a0.zw, h.y);
+                vec3 p2 = vec3(a1.xy, h.z);
+                vec3 p3 = vec3(a1.zw, h.w);
+                
+                // Normalise gradients
+                vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+                p0 *= norm.x;
+                p1 *= norm.y;
+                p2 *= norm.z;
+                p3 *= norm.w;
+                
+                // Mix final noise value
+                vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+                m = m * m;
+                return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+            }
+            
+            void main() {
+                // Animated noise for lava flow effect
+                float noise1 = snoise(vec3(vUv * 3.0, time * flowSpeed * 0.2)) * 0.5 + 0.5;
+                float noise2 = snoise(vec3(vUv * 5.0, time * flowSpeed * 0.5 + 100.0)) * 0.5 + 0.5;
+                
+                // Audio-reactive intensity
+                float noiseSum = mix(noise1, noise2, 0.5) * (1.0 + audioIntensity * 2.0);
+                
+                // Edge detection for outline effect
+                float edge = smoothstep(0.4, 0.6, noiseSum);
+                
+                // Color mixing based on noise
+                vec3 color = mix(baseColor, accentColor, noise2 * audioIntensity);
+                
+                // Add glow effect
+                float glow = pow(noiseSum, 2.0) * (1.0 + audioIntensity);
+                color += accentColor * glow * 0.5;
+                
+                // Create lava-like pulsing and flowing
+                float alpha = smoothstep(0.1, 0.9, noiseSum) * (0.6 + audioIntensity * 0.4);
+                
+                gl_FragColor = vec4(color, alpha);
+            }
+        `,
+        transparent: true,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending
+    });
+};
+
+// Function to create lava effect for a musician
+const createMusicianLavaEffect = (musician, baseColor) => {
+    // Create a slightly larger plane for the lava effect
+    const lavaWidth = MUSICIAN_PLANE_WIDTH * 1.15;
+    const lavaHeight = MUSICIAN_PLANE_HEIGHT * 1.15;
+    const lavaGeometry = new THREE.PlaneGeometry(lavaWidth, lavaHeight, 32, 32);
+    
+    // Create shader material with unique color
+    const lavaMaterial = createLavaShader(baseColor);
+    
+    // Create mesh and position it slightly behind the musician
+    const lavaEffect = new THREE.Mesh(lavaGeometry, lavaMaterial);
+    lavaEffect.position.z = musician.position.z + 0.01; // Slightly behind
+    lavaEffect.position.y = musician.position.y;
+    lavaEffect.position.x = musician.position.x;
+    
+    // Add to scene
+    scene.add(lavaEffect);
+    
+    // Store reference to the musician for position updates
+    lavaEffect.userData.musician = musician;
+    
+    // Add particles for 3D effect
+    const particleCount = 100;
+    const particleGeometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(particleCount * 3);
+    const particleSizes = new Float32Array(particleCount);
+    
+    // Initialize particles around the silhouette
+    for (let i = 0; i < particleCount; i++) {
+        const i3 = i * 3;
+        const angle = Math.random() * Math.PI * 2;
+        const radius = (Math.random() * 0.2) + (lavaWidth / 2) * 0.8;
+        
+        positions[i3] = Math.cos(angle) * radius;
+        positions[i3 + 1] = Math.sin(angle) * radius - lavaHeight * 0.1;
+        positions[i3 + 2] = (Math.random() - 0.5) * 0.5;
+        
+        particleSizes[i] = Math.random() * 0.1 + 0.05;
+    }
+    
+    particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    particleGeometry.setAttribute('size', new THREE.BufferAttribute(particleSizes, 1));
+    
+    // Custom particle shader
+    const particleMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            time: { value: 0 },
+            color: { value: new THREE.Color(baseColor) },
+            audioIntensity: { value: 0.0 }
+        },
+        vertexShader: `
+            uniform float time;
+            uniform float audioIntensity;
+            attribute float size;
+            varying vec3 vColor;
+            
+            void main() {
+                vColor = vec3(1.0);
+                
+                // Animate particles
+                vec3 pos = position;
+                
+                // Flow upward and outward
+                float life = mod(time * 0.5 + position.x * 0.1 + position.y * 0.1, 1.0);
+                pos.y += life * 1.5 * (1.0 + audioIntensity);
+                pos.x += sin(time + position.y * 2.0) * 0.1 * life;
+                pos.z += cos(time + position.x * 2.0) * 0.1 * life;
+                
+                // Fade out as they move away
+                float scale = size * (1.0 - life) * (1.0 + audioIntensity);
+                
+                vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+                gl_PointSize = scale * (30.0 / -mvPosition.z);
+                gl_Position = projectionMatrix * mvPosition;
+            }
+        `,
+        fragmentShader: `
+            uniform vec3 color;
+            uniform float audioIntensity;
+            varying vec3 vColor;
+            
+            void main() {
+                // Circular particle
+                float r = distance(gl_PointCoord, vec2(0.5));
+                if (r > 0.5) discard;
+                
+                // Glow intensity based on distance from center
+                float intensity = 0.5 - r;
+                
+                // Mix with base color
+                vec3 finalColor = mix(color, vec3(1.0), intensity * (1.0 + audioIntensity));
+                
+                gl_FragColor = vec4(finalColor, intensity);
+            }
+        `,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        transparent: true
+    });
+    
+    const particles = new THREE.Points(particleGeometry, particleMaterial);
+    particles.userData.musician = musician;
+    scene.add(particles);
+    
+    return { lavaEffect, particles, baseColor };
+};
+
+// Initialize lava effects for all musicians
+const lavaEffects = [];
+
+function initializeLavaEffects() {
+    // Clear any existing effects first
+    for (const effect of lavaEffects) {
+        if (effect.lavaEffect) scene.remove(effect.lavaEffect);
+        if (effect.particles) scene.remove(effect.particles);
+    }
+    lavaEffects.length = 0;
+    
+    // Create unique colors for each musician type
+    const colorMap = {
+        'guitarist': 0xff3300,    // Orange-red
+        'bassist': 0x0099ff,      // Blue
+        'singer': 0xffff00,       // Yellow
+        'backup': 0xff00ff,       // Magenta
+        'drummer': 0x00ff66       // Green
+    };
+    
+    // Add lava effect to each musician
+    for (const musician of musicians) {
+        const baseColor = colorMap[musician.type];
+        const effect = createMusicianLavaEffect(musician.mesh, baseColor);
+        lavaEffects.push(effect);
+    }
+}
 
 // Audio setup
 const audioElement = document.getElementById('music');
@@ -503,6 +781,53 @@ function animateLights(delta) {
     }
 }
 
+// Lava animation function
+function updateLavaEffects(delta, bassAvg, midAvg, highAvg) {
+    for (let i = 0; i < lavaEffects.length; i++) {
+        const effect = lavaEffects[i];
+        const musician = musicians[i];
+        
+        if (!effect || !musician) continue;
+        
+        // Determine audio intensity based on musician type
+        let audioIntensity = 0;
+        
+        if (musician.type === 'guitarist') {
+            audioIntensity = midAvg * 2;
+        } else if (musician.type === 'bassist') {
+            audioIntensity = bassAvg * 2;
+        } else if (musician.type === 'drummer') {
+            audioIntensity = bassAvg * 3;
+        } else if (musician.type === 'singer') {
+            audioIntensity = highAvg * 2;
+        } else {
+            audioIntensity = midAvg * 1.5;
+        }
+        
+        // Only show effects for musicians that are on stage
+        const isOnStage = Math.abs(musician.mesh.position.x) < 10;
+        
+        // Update lava effect position to follow musician
+        effect.lavaEffect.position.copy(musician.mesh.position);
+        effect.lavaEffect.position.z -= 0.01; // Slightly behind
+        
+        // Update particles position
+        effect.particles.position.copy(musician.mesh.position);
+        
+        // Update shader uniforms
+        effect.lavaEffect.material.uniforms.time.value = time;
+        effect.lavaEffect.material.uniforms.audioIntensity.value = isOnStage ? audioIntensity : 0;
+        effect.lavaEffect.material.uniforms.flowSpeed.value = 1.0 + audioIntensity;
+        
+        effect.particles.material.uniforms.time.value = time;
+        effect.particles.material.uniforms.audioIntensity.value = isOnStage ? audioIntensity : 0;
+        
+        // Set opacity based on whether musician is on stage
+        effect.lavaEffect.material.opacity = isOnStage ? 1.0 : 0;
+        effect.particles.material.opacity = isOnStage ? 1.0 : 0;
+    }
+}
+
 // Animation loop
 const clock = new THREE.Clock();
 
@@ -528,6 +853,35 @@ function animate() {
     // Animate scene elements
     animateLights(delta);
     
+    // Update lava effects with audio data
+    if (dataArray && isPlaying) {
+        analyser.getByteFrequencyData(dataArray);
+        
+        // Get average of bass frequencies
+        let bassSum = 0;
+        for (let i = 0; i < 10; i++) {
+            bassSum += dataArray[i];
+        }
+        const bassAvg = bassSum / 10 / 255;
+        
+        // Get average of mid frequencies
+        let midSum = 0;
+        for (let i = 10; i < 100; i++) {
+            midSum += dataArray[i];
+        }
+        const midAvg = midSum / 90 / 255;
+        
+        // Get average of high frequencies
+        let highSum = 0;
+        for (let i = 100; i < 200; i++) {
+            highSum += dataArray[i];
+        }
+        const highAvg = highSum / 100 / 255;
+        
+        // Update lava effects with audio data
+        updateLavaEffects(delta, bassAvg, midAvg, highAvg);
+    }
+    
     // Render scene
     renderer.render(scene, camera);
 }
@@ -551,6 +905,11 @@ document.getElementById('playBtn').addEventListener('click', () => {
         
         // Disable orbit controls when playing for choreographed camera moves
         controls.enabled = false;
+        
+        // Initialize lava effects when play starts
+        if (lavaEffects.length === 0) {
+            initializeLavaEffects();
+        }
     } else {
         audioElement.pause();
         isPlaying = false;
