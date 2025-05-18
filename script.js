@@ -156,8 +156,6 @@ const createMusicianPlane = (imagePath, initialPosition, isPlaying = false) => {
 
 // Guitarist - on-stage from the start and actively playing
 const guitarist = createMusicianPlane('/guitarist.png', [2, 0, -1], true);
-guitarist.position.set(2, MUSICIAN_PLANE_HEIGHT / 2, -1);
-guitarist.visible = true;
 
 // Bassist - on-stage from the start and actively playing
 const bassist = createMusicianPlane('/bassist.png', [-2, 0, 0], true);
@@ -284,11 +282,6 @@ function updateCameraPosition() {
 // Animation for band member entrances
 function animateBandEntrances() {
     currentPlayTime = audioElement.currentTime;
-    
-    if (guitarist.position.x < -10 || guitarist.position.x > 10 || 
-        guitarist.position.z < -10 || guitarist.position.z > 10) {
-        guitarist.position.set(2, MUSICIAN_PLANE_HEIGHT / 2, -1);
-    }
     
     if (currentPlayTime < 10) {
         if (currentCameraTarget !== "guitarist" && currentPlayTime > 2) {
@@ -455,17 +448,15 @@ function animateLights(delta) {
         spotLights[0].intensity = 2 + bassAvg * 5;
         spotLights[1].intensity = 2 + midAvg * 5;
         
-        const limitedMidAvg = Math.min(midAvg, 0.8);
-        const limitedHighAvg = Math.min(highAvg, 0.8);
-        
-        guitarist.position.y = musicianBaseY + Math.sin(time * 5) * 0.15 * limitedMidAvg;
-        guitarist.rotation.x = Math.sin(time * 4) * 0.1 * limitedMidAvg;
-        guitarist.rotation.z = Math.cos(time * 2) * 0.05 * limitedHighAvg;
-        
-        guitarist.position.x = 2 + Math.sin(time * 1.5) * 0.1 * limitedMidAvg;
-        guitarist.position.z = -1;
+        guitarist.position.y = musicianBaseY + Math.sin(time * 5) * 0.15 * midAvg;
+        guitarist.position.x = 2; 
+        guitarist.position.z = -1; 
+        guitarist.rotation.x = Math.sin(time * 4) * 0.1 * midAvg;
+        guitarist.rotation.z = Math.cos(time * 2) * 0.05 * highAvg;
         
         bassist.position.y = musicianBaseY + Math.sin(time * 3) * 0.12 * bassAvg;
+        bassist.position.x = -2; 
+        bassist.position.z = 0; 
         bassist.rotation.x = Math.sin(time * 2.5) * 0.08 * bassAvg;
         bassist.rotation.z = Math.cos(time * 1.5) * 0.04 * bassAvg;
         
@@ -484,6 +475,8 @@ function animateLights(delta) {
         
         if (drummerEntered) {
             drummer.position.y = musicianBaseY + Math.sin(time * 8) * 0.2 * bassAvg;
+            drummer.position.x = -2; 
+            drummer.position.z = -2; 
             drummer.rotation.y = Math.sin(time * 0.5) * 0.1;
             drummer.rotation.x = Math.sin(time * 5) * 0.15 * bassAvg;
         }
