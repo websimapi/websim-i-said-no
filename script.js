@@ -446,19 +446,9 @@ function animateLights(delta) {
     if (audioAnalyzer && isPlaying) {
         const audioData = audioAnalyzer.update();
         
-        // Get average of bass frequencies
-        let bassSum = 0;
-        for (let i = 0; i < 10; i++) {
-            bassSum += audioData.frequencyBinCount[i];
-        }
-        const bassAvg = bassSum / 10 / 255;
-        
-        // Get average of mid frequencies
-        let midSum = 0;
-        for (let i = 10; i < 100; i++) {
-            midSum += audioData.frequencyBinCount[i];
-        }
-        const midAvg = midSum / 90 / 255;
+        // Get bass and mid intensity directly from audioData
+        const bassAvg = audioData.bassIntensity;
+        const midAvg = audioData.midIntensity;
         
         // Adjust spotlight intensities based on music and current focus
         spotLights[0].intensity = 2 + bassAvg * 5;

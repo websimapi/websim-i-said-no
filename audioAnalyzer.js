@@ -51,7 +51,8 @@ class AudioAnalyzer {
                 bassIntensity: 0,
                 midIntensity: 0,
                 highIntensity: 0,
-                beatDetected: false
+                beatDetected: false,
+                frequencyBinCount: new Uint8Array(0)
             };
         }
         
@@ -75,7 +76,8 @@ class AudioAnalyzer {
             bassIntensity: this.energyBands.bass.value,
             midIntensity: this.energyBands.mid.value,
             highIntensity: this.energyBands.high.value,
-            beatDetected: this.beatDetector.beatDetected
+            beatDetected: this.beatDetector.beatDetected,
+            frequencyBinCount: this.dataArray
         };
     }
     
