@@ -20,15 +20,15 @@ void main() {
     // Calculate position with enhanced movement based on audio
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
     
-    // Make particles animate more with the music
-    float sizeModulation = audioIntensity * 0.6 + 0.4 + sin(time * 4.0) * 0.15 * beatActive;
+    // Make particles animate more with the music - ENHANCED AUDIO RESPONSE
+    float sizeModulation = audioIntensity * 1.0 + 0.5 + sin(time * 4.0) * 0.25 * beatActive;
     
-    // Add some extra movement based on beat detection
+    // Add some extra movement based on beat detection - MORE ENERGETIC
     if (beatActive > 0.5) {
-        mvPosition.xyz += normalize(mvPosition.xyz) * sin(time * 10.0) * 0.02 * beatActive;
+        mvPosition.xyz += normalize(mvPosition.xyz) * sin(time * 10.0) * 0.05 * beatActive;
     }
     
-    gl_PointSize = size * sizeModulation * (280.0 / -mvPosition.z);
+    gl_PointSize = size * sizeModulation * (300.0 / -mvPosition.z);
     gl_Position = projectionMatrix * mvPosition;
 }
 `;
@@ -61,45 +61,45 @@ void main() {
         discard;
     }
     
-    // Calculate distance to edge using alpha channel gradient
+    // Calculate distance to edge using alpha channel gradient - IMPROVED EDGE DETECTION
     float distanceToEdge = 0.0;
-    if (texColor.a > 0.1 && texColor.a < 0.99) {
+    if (texColor.a > 0.05 && texColor.a < 0.99) {
         distanceToEdge = 1.0 - abs(0.5 - texColor.a) * 2.0;
     }
     
-    // Animate outline width with audio and time
-    float animatedWidth = outlineWidth * (1.0 + sin(time * 3.0) * 0.2 * bassIntensity);
+    // Animate outline width with audio and time - INCREASED EFFECT
+    float animatedWidth = outlineWidth * (1.0 + sin(time * 3.0) * 0.4 * bassIntensity);
     
-    // Create a more dynamic, animated glowing outline effect
-    float glowStrength = smoothstep(0.0, animatedWidth, distanceToEdge) * outlineIntensity;
+    // Create a more dynamic, animated glowing outline effect - STRONGER GLOW
+    float glowStrength = smoothstep(0.0, animatedWidth, distanceToEdge) * outlineIntensity * 1.5;
     
-    // Make the glow pulse more dramatically with the audio
-    float pulseFactor = 1.0 + sin(time * 4.0) * 0.3 * audioIntensity 
-                       + sin(time * 8.0) * 0.2 * beatActive;
+    // Make the glow pulse more dramatically with the audio - ENHANCED PULSING
+    float pulseFactor = 1.0 + sin(time * 4.0) * 0.5 * audioIntensity 
+                       + sin(time * 8.0) * 0.4 * beatActive;
     glowStrength *= pulseFactor;
     
-    // Create a wave-like distortion in the outline for more animation
-    float waveDistortion = sin(vUv.y * 10.0 + time * 2.0) * 0.05 * beatActive;
+    // Create a wave-like distortion in the outline for more animation - MORE VISIBLE WAVES
+    float waveDistortion = sin(vUv.y * 12.0 + time * 3.0) * 0.1 * beatActive;
     glowStrength *= (1.0 + waveDistortion);
     
-    // Color shift based on audio frequencies - more dynamic color changes
-    float colorShift = sin(time * 0.5) * 0.3 * midIntensity;
+    // Color shift based on audio frequencies - more dynamic color changes - ENHANCED COLOR SHIFT
+    float colorShift = sin(time * 0.5) * 0.5 * midIntensity;
     vec3 shiftedColor = baseColor;
     
-    // Shift the hue slightly based on different audio bands
-    shiftedColor.r = baseColor.r * (1.0 + sin(time) * 0.15 * bassIntensity);
-    shiftedColor.g = baseColor.g * (1.0 + cos(time * 1.2) * 0.15 * midIntensity);
-    shiftedColor.b = baseColor.b * (1.0 + sin(time * 0.7) * 0.15 * highIntensity);
+    // Shift the hue more dramatically based on different audio bands
+    shiftedColor.r = baseColor.r * (1.0 + sin(time) * 0.3 * bassIntensity);
+    shiftedColor.g = baseColor.g * (1.0 + cos(time * 1.2) * 0.3 * midIntensity);
+    shiftedColor.b = baseColor.b * (1.0 + sin(time * 0.7) * 0.3 * highIntensity);
     
-    // On beat, add a flash of brightness
+    // On beat, add a flash of brightness - STRONGER FLASH
     if (beatActive > 0.5) {
-        shiftedColor = mix(shiftedColor, vec3(1.0), beatActive * 0.3);
+        shiftedColor = mix(shiftedColor, vec3(1.0), beatActive * 0.5);
     }
     
     // Mix the texture color with the animated outline glow
     vec4 finalColor = texColor;
     
-    // Add the dynamic glow around the edges
+    // Add the dynamic glow around the edges - MORE PROMINENT
     if (glowStrength > 0.0) {
         finalColor = mix(finalColor, vec4(shiftedColor, texColor.a), glowStrength);
     }
@@ -124,32 +124,32 @@ void main() {
     float dist = length(gl_PointCoord - vec2(0.5));
     if (dist > 0.5) discard; // Make particles round
     
-    // Create a more dynamic, animated soft edge
-    float softFactor = 0.25 + 0.05 * sin(time * 3.0 + vColor.r * 10.0) * bassIntensity;
+    // Create a more dynamic, animated soft edge - SOFTER EDGE FOR BETTER GLOW
+    float softFactor = 0.2 + 0.1 * sin(time * 3.0 + vColor.r * 10.0) * bassIntensity;
     float alpha = smoothstep(softFactor, 0.5, 0.5 - dist);
     
-    // Create a pulsing effect based on time and audio - more responsive
-    float pulse = 0.7 + 0.3 * sin(time * 5.0 + vColor.g * 8.0);
-    pulse *= (0.6 + 0.4 * audioIntensity);
+    // Create a pulsing effect based on time and audio - STRONGER PULSE
+    float pulse = 0.7 + 0.5 * sin(time * 5.0 + vColor.g * 8.0);
+    pulse *= (0.5 + 0.8 * audioIntensity); // MORE INFLUENCED BY AUDIO
     
-    // Add extra brightness on beats
-    float beatBoost = max(0.0, beatActive * 0.4);
+    // Add extra brightness on beats - AMPLIFIED BEAT RESPONSE
+    float beatBoost = max(0.0, beatActive * 0.7);
     
-    // Shift colors based on audio frequency bands
+    // Shift colors based on audio frequency bands - MORE COLOR VARIANCE
     vec3 dynamicColor = vColor;
-    dynamicColor.r *= 1.0 + sin(time * 0.7) * 0.2 * bassIntensity;
-    dynamicColor.g *= 1.0 + cos(time * 0.9) * 0.2 * midIntensity;
-    dynamicColor.b *= 1.0 + sin(time * 1.1) * 0.2 * highIntensity;
+    dynamicColor.r *= 1.0 + sin(time * 0.7) * 0.4 * bassIntensity;
+    dynamicColor.g *= 1.0 + cos(time * 0.9) * 0.4 * midIntensity;
+    dynamicColor.b *= 1.0 + sin(time * 1.1) * 0.4 * highIntensity;
     
-    // Brighten on beats
-    dynamicColor = mix(dynamicColor, dynamicColor * 1.5, beatBoost);
+    // Brighten on beats - BRIGHTER FLASH
+    dynamicColor = mix(dynamicColor, dynamicColor * 2.0, beatBoost);
     
     // Add some subtle color variation for more dynamic effect
-    float colorVariation = sin(time * 2.0 + gl_PointCoord.x * 10.0) * 0.1;
+    float colorVariation = sin(time * 2.0 + gl_PointCoord.x * 10.0) * 0.15;
     dynamicColor = mix(dynamicColor, baseColor, colorVariation);
     
-    // More dynamic opacity modulation based on audio
-    float dynamicAlpha = alpha * pulse * (0.6 + bassIntensity * 0.2 + midIntensity * 0.2);
+    // More dynamic opacity modulation based on audio - HIGHER BASE OPACITY
+    float dynamicAlpha = alpha * pulse * (0.7 + bassIntensity * 0.3 + midIntensity * 0.3);
     
     // Final color with enhanced audio reactivity
     gl_FragColor = vec4(dynamicColor * pulse, dynamicAlpha);
@@ -180,8 +180,8 @@ class MusicianEffect {
             uniforms: {
                 map: { value: this.musician.material.map },
                 baseColor: { value: this.baseColor },
-                outlineWidth: { value: 0.08 },
-                outlineIntensity: { value: 0.6 },
+                outlineWidth: { value: 0.12 }, // WIDER OUTLINE
+                outlineIntensity: { value: 0.8 }, // STRONGER INTENSITY
                 time: { value: 0 },
                 audioIntensity: { value: 0 },
                 beatActive: { value: 0 },
@@ -207,7 +207,7 @@ class MusicianEffect {
     }
     
     createParticleSystem() {
-        const particleCount = 400; 
+        const particleCount = 600; // MORE PARTICLES
         const particleGeometry = new THREE.BufferGeometry();
         
         // Get musician dimensions
@@ -228,27 +228,27 @@ class MusicianEffect {
             let radius;
             if (Math.random() < 0.7) {
                 // Position more particles near the edge for a radiating effect
-                radius = width * 0.3 + Math.random() * width * 0.15;
+                radius = width * 0.3 + Math.random() * width * 0.2; // WIDER RADIUS
             } else {
                 // Some particles more central
                 radius = Math.random() * width * 0.3;
             }
             
             const x = Math.cos(angle) * radius;
-            const y = (Math.random() - 0.5) * height * 0.8;
+            const y = (Math.random() - 0.5) * height * 0.9; // MORE HEIGHT COVERAGE
             
             // Position relative to the musician's center, slightly behind
             positions[i * 3] = x;
             positions[i * 3 + 1] = y;
-            positions[i * 3 + 2] = -0.15; // Position particles BEHIND the musician plane
+            positions[i * 3 + 2] = -0.2; // FURTHER BEHIND for better visibility
             
             // More varied color based on base color
-            colors[i * 3] = this.baseColor.r + (Math.random() * 0.2 - 0.1);
-            colors[i * 3 + 1] = this.baseColor.g + (Math.random() * 0.2 - 0.1);
-            colors[i * 3 + 2] = this.baseColor.b + (Math.random() * 0.2 - 0.1);
+            colors[i * 3] = this.baseColor.r + (Math.random() * 0.3 - 0.15); // MORE COLOR VARIANCE
+            colors[i * 3 + 1] = this.baseColor.g + (Math.random() * 0.3 - 0.15);
+            colors[i * 3 + 2] = this.baseColor.b + (Math.random() * 0.3 - 0.15);
             
-            // More varied sizes for more dynamic effect
-            sizes[i] = Math.random() * 4 + 1.5;
+            // More varied sizes for more dynamic effect - LARGER PARTICLES
+            sizes[i] = Math.random() * 5 + 2.5;
         }
         
         particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -283,13 +283,13 @@ class MusicianEffect {
         
         // Set initial velocities, lifetimes, and energies
         for (let i = 0; i < particleCount; i++) {
-            // More varied velocities for more dynamic movement
-            this.particleSystem.userData.particleVelocities[i * 3] = (Math.random() - 0.5) * 0.02;
-            this.particleSystem.userData.particleVelocities[i * 3 + 1] = Math.random() * 0.04 + 0.01;
-            this.particleSystem.userData.particleVelocities[i * 3 + 2] = (Math.random() - 0.5) * 0.02;
+            // More varied velocities for more dynamic movement - FASTER MOVEMENT
+            this.particleSystem.userData.particleVelocities[i * 3] = (Math.random() - 0.5) * 0.04;
+            this.particleSystem.userData.particleVelocities[i * 3 + 1] = Math.random() * 0.06 + 0.02;
+            this.particleSystem.userData.particleVelocities[i * 3 + 2] = (Math.random() - 0.5) * 0.04;
             
-            // Varied lifetimes for more natural flow
-            this.particleSystem.userData.particleLifetimes[i] = Math.random() * 2 + 0.5;
+            // Varied lifetimes for more natural flow - LONGER LIFETIMES
+            this.particleSystem.userData.particleLifetimes[i] = Math.random() * 3 + 1.0;
             
             // Energy level - for particle animation
             this.particleSystem.userData.particleEnergies[i] = Math.random();
@@ -303,36 +303,45 @@ class MusicianEffect {
         // Update audio data
         this.audioData = audioData;
         
+        // Amplify audio response - multiply each component to make effects more noticeable
+        const amplifiedAudio = {
+            intensity: audioData.intensity * 1.5, // BOOSTED INTENSITY
+            bassIntensity: audioData.bassIntensity * 1.5,
+            midIntensity: audioData.midIntensity * 1.5,
+            highIntensity: audioData.highIntensity * 1.5,
+            beatDetected: audioData.beatDetected
+        };
+        
         // Update outline shader uniforms with enhanced audio reactivity
         if (this.outlineShaderMaterial) {
             this.outlineShaderMaterial.uniforms.time.value = time;
-            this.outlineShaderMaterial.uniforms.audioIntensity.value = audioData.intensity;
-            this.outlineShaderMaterial.uniforms.beatActive.value = audioData.beatDetected ? 1.0 : 0.0;
-            this.outlineShaderMaterial.uniforms.bassIntensity.value = audioData.bassIntensity;
-            this.outlineShaderMaterial.uniforms.midIntensity.value = audioData.midIntensity;
-            this.outlineShaderMaterial.uniforms.highIntensity.value = audioData.highIntensity;
+            this.outlineShaderMaterial.uniforms.audioIntensity.value = amplifiedAudio.intensity;
+            this.outlineShaderMaterial.uniforms.beatActive.value = amplifiedAudio.beatDetected ? 1.0 : 0.0;
+            this.outlineShaderMaterial.uniforms.bassIntensity.value = amplifiedAudio.bassIntensity;
+            this.outlineShaderMaterial.uniforms.midIntensity.value = amplifiedAudio.midIntensity;
+            this.outlineShaderMaterial.uniforms.highIntensity.value = amplifiedAudio.highIntensity;
             
-            // Make outline more dynamic
-            if (audioData.beatDetected) {
-                this.outlineShaderMaterial.uniforms.outlineIntensity.value = 0.85; 
-                this.outlineShaderMaterial.uniforms.outlineWidth.value = 0.09; 
+            // Make outline more dynamic - STRONGER EFFECTS
+            if (amplifiedAudio.beatDetected) {
+                this.outlineShaderMaterial.uniforms.outlineIntensity.value = 1.2; // MUCH BRIGHTER ON BEAT
+                this.outlineShaderMaterial.uniforms.outlineWidth.value = 0.15; // WIDER ON BEAT
             } else {
                 this.outlineShaderMaterial.uniforms.outlineIntensity.value = 
-                    0.6 + audioData.bassIntensity * 0.4; 
+                    0.8 + amplifiedAudio.bassIntensity * 0.6; // MORE BASS INFLUENCE
                 this.outlineShaderMaterial.uniforms.outlineWidth.value = 
-                    0.07 + audioData.midIntensity * 0.04; 
+                    0.1 + amplifiedAudio.midIntensity * 0.08; // WIDER BASED ON MID
             }
         }
         
         // Update particle system with enhanced audio reactivity
         if (this.particleSystem) {
-            // Update uniforms
+            // Update uniforms with amplified audio data
             this.particleSystem.material.uniforms.time.value = time;
-            this.particleSystem.material.uniforms.audioIntensity.value = audioData.intensity;
-            this.particleSystem.material.uniforms.beatActive.value = audioData.beatDetected ? 1.0 : 0.0;
-            this.particleSystem.material.uniforms.bassIntensity.value = audioData.bassIntensity;
-            this.particleSystem.material.uniforms.midIntensity.value = audioData.midIntensity;
-            this.particleSystem.material.uniforms.highIntensity.value = audioData.highIntensity;
+            this.particleSystem.material.uniforms.audioIntensity.value = amplifiedAudio.intensity;
+            this.particleSystem.material.uniforms.beatActive.value = amplifiedAudio.beatDetected ? 1.0 : 0.0;
+            this.particleSystem.material.uniforms.bassIntensity.value = amplifiedAudio.bassIntensity;
+            this.particleSystem.material.uniforms.midIntensity.value = amplifiedAudio.midIntensity;
+            this.particleSystem.material.uniforms.highIntensity.value = amplifiedAudio.highIntensity;
             
             // Update particle positions and lifetimes
             const positions = this.particleSystem.geometry.attributes.position.array;
@@ -347,8 +356,8 @@ class MusicianEffect {
             const height = this.musician.geometry.parameters.height;
             
             for (let i = 0; i < positions.length / 3; i++) {
-                // Update lifetime with audio-reactive decay
-                lifetimes[i] -= 0.016 * (1.0 + audioData.intensity * 0.2); 
+                // Update lifetime with audio-reactive decay - FASTER ON HIGH INTENSITY
+                lifetimes[i] -= 0.016 * (1.0 + amplifiedAudio.intensity * 0.3); 
                 
                 // If particle died, respawn it near the outline
                 if (lifetimes[i] <= 0) {
@@ -359,76 +368,76 @@ class MusicianEffect {
                     let radius;
                     if (Math.random() < 0.7) {
                         // Position more particles near the edge for a radiating effect
-                        radius = width * 0.3 + Math.random() * width * 0.15;
+                        radius = width * 0.3 + Math.random() * width * 0.2;
                     } else {
                         // Some particles more central
                         radius = Math.random() * width * 0.3;
                     }
                     
                     const x = Math.cos(angle) * radius;
-                    const y = (Math.random() - 0.5) * height * 0.8;
+                    const y = (Math.random() - 0.5) * height * 0.9;
                     
                     // Set new position
                     positions[i * 3] = x;
                     positions[i * 3 + 1] = y;
-                    positions[i * 3 + 2] = -0.15; // Behind musician
+                    positions[i * 3 + 2] = -0.2; // Further behind for better visibility
                     
-                    // Dynamic new velocity influenced by audio intensity
-                    const velocityMultiplier = 1.0 + audioData.intensity * 0.8;
-                    velocities[i * 3] = (Math.random() - 0.5) * 0.03 * velocityMultiplier;
-                    velocities[i * 3 + 1] = (Math.random() * 0.05 + 0.02) * velocityMultiplier;
-                    velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.03 * velocityMultiplier;
+                    // Dynamic new velocity influenced by audio intensity - MUCH MORE RESPONSIVE
+                    const velocityMultiplier = 1.0 + amplifiedAudio.intensity * 1.2;
+                    velocities[i * 3] = (Math.random() - 0.5) * 0.05 * velocityMultiplier;
+                    velocities[i * 3 + 1] = (Math.random() * 0.08 + 0.03) * velocityMultiplier;
+                    velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.05 * velocityMultiplier;
                     
-                    // Reset lifetime - longer for more persistent particles
-                    lifetimes[i] = Math.random() * 2 + 1;
+                    // Reset lifetime - longer when audio is quieter for more persistence
+                    lifetimes[i] = Math.random() * 2 + 1.5 - (amplifiedAudio.intensity * 0.5);
                     
-                    // Particle size based on audio intensity
-                    sizes[i] = (Math.random() * 3 + 2) * (1.0 + audioData.intensity * 0.6);
+                    // Particle size based on audio intensity - LARGER PARTICLES
+                    sizes[i] = (Math.random() * 4 + 3) * (1.0 + amplifiedAudio.intensity * 1.0);
                     
                     // Energy level - for particle animation
                     energies[i] = Math.random();
                     
-                    // Color variation based on audio frequency
-                    colors[i * 3] = this.baseColor.r + (Math.random() * 0.2 - 0.1) + audioData.bassIntensity * 0.2;
-                    colors[i * 3 + 1] = this.baseColor.g + (Math.random() * 0.2 - 0.1) + audioData.midIntensity * 0.2;
-                    colors[i * 3 + 2] = this.baseColor.b + (Math.random() * 0.2 - 0.1) + audioData.highIntensity * 0.2;
+                    // Color variation based on audio frequency - MORE COLOR SHIFT
+                    colors[i * 3] = this.baseColor.r + (Math.random() * 0.3 - 0.15) + amplifiedAudio.bassIntensity * 0.3;
+                    colors[i * 3 + 1] = this.baseColor.g + (Math.random() * 0.3 - 0.15) + amplifiedAudio.midIntensity * 0.3;
+                    colors[i * 3 + 2] = this.baseColor.b + (Math.random() * 0.3 - 0.15) + amplifiedAudio.highIntensity * 0.3;
                 } else {
-                    // Update existing particle position with more dynamic movement
-                    positions[i * 3] += velocities[i * 3] * (1.0 + energies[i] * 0.5);
-                    positions[i * 3 + 1] += velocities[i * 3 + 1] * (1.0 + energies[i] * 0.5);
-                    positions[i * 3 + 2] += velocities[i * 3 + 2] * (1.0 + energies[i] * 0.5);
+                    // Update existing particle position with more dynamic movement - FASTER MOVEMENT
+                    positions[i * 3] += velocities[i * 3] * (1.2 + energies[i] * 0.8);
+                    positions[i * 3 + 1] += velocities[i * 3 + 1] * (1.2 + energies[i] * 0.8);
+                    positions[i * 3 + 2] += velocities[i * 3 + 2] * (1.2 + energies[i] * 0.8);
                     
-                    // Apply some swirling effect based on particle position and music
-                    const swirl = 0.002 * audioData.midIntensity;
+                    // Apply some swirling effect based on particle position and music - STRONGER SWIRL
+                    const swirl = 0.004 * amplifiedAudio.midIntensity;
                     const distance = Math.sqrt(positions[i * 3] * positions[i * 3] + positions[i * 3 + 1] * positions[i * 3 + 1]);
                     if (distance > 0.2) {
                         velocities[i * 3] += -positions[i * 3 + 1] * swirl / distance;
                         velocities[i * 3 + 1] += positions[i * 3] * swirl / distance;
                     }
                     
-                    // Apply some "gravity" effect - gentle floating upward
-                    velocities[i * 3 + 1] += 0.0005;
+                    // Apply some "gravity" effect - stronger floating upward
+                    velocities[i * 3 + 1] += 0.001;
                     
                     // Dampen horizontal movement
                     velocities[i * 3] *= 0.99;
                     velocities[i * 3 + 2] *= 0.99;
                     
-                    // Add extra movement on beats - more energetic
-                    if (audioData.beatDetected) {
-                        velocities[i * 3] += (Math.random() - 0.5) * 0.015 * energies[i];
-                        velocities[i * 3 + 1] += Math.random() * 0.025 * energies[i];
-                        velocities[i * 3 + 2] += (Math.random() - 0.5) * 0.015 * energies[i];
+                    // Add extra movement on beats - MUCH MORE ENERGETIC
+                    if (amplifiedAudio.beatDetected) {
+                        velocities[i * 3] += (Math.random() - 0.5) * 0.03 * energies[i];
+                        velocities[i * 3 + 1] += Math.random() * 0.04 * energies[i];
+                        velocities[i * 3 + 2] += (Math.random() - 0.5) * 0.03 * energies[i];
                         
-                        // Slightly increase size on beat
-                        sizes[i] *= 1.05;
+                        // Increase size on beat - MORE DRAMATIC
+                        sizes[i] *= 1.2;
                     }
                     
                     // Gradually reduce size as particle ages for dissipation effect
                     const lifeFactor = lifetimes[i] / 3.0; 
                     sizes[i] *= 0.995; 
                     
-                    // Color shift based on age and audio
-                    const colorShift = 0.005 * audioData.intensity;
+                    // Color shift based on age and audio - MORE DRAMATIC SHIFTS
+                    const colorShift = 0.01 * amplifiedAudio.intensity;
                     colors[i * 3] += (Math.random() * 2 - 1) * colorShift;
                     colors[i * 3 + 1] += (Math.random() * 2 - 1) * colorShift;
                     colors[i * 3 + 2] += (Math.random() * 2 - 1) * colorShift;
