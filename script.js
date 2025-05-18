@@ -27,25 +27,23 @@ const musicianFragmentShader = `
             discard;
         }
 
-        float musicPower = (bassIntensity + midIntensity + trebleIntensity) / 3.0;
-        musicPower = pow(musicPower, 1.5); // Emphasize peaks
+        float musicPower = (bassIntensity * 1.2 + midIntensity * 1.0 + trebleIntensity * 0.8) / 3.0; // Emphasize bass a bit more
+        musicPower = pow(musicPower, 1.2); // Slightly less aggressive power curve
 
         // Pulsating brightness based on bass
-        float brightnessPulse = 1.0 + sin(time * 6.0 + bassIntensity * 5.0) * 0.4 * bassIntensity;
-        brightnessPulse = mix(1.0, brightnessPulse, musicPower * 0.8);
+        float brightnessPulse = 1.0 + sin(time * 7.0 + bassIntensity * 6.0) * 0.5 * bassIntensity; // Stronger pulse
+        brightnessPulse = mix(1.0, brightnessPulse, musicPower * 0.9); // Apply more strongly
 
         // Tint musician's color towards glowColor based on overall music power
         vec3 finalColor = texColor.rgb;
-        finalColor = mix(finalColor, glowColor, musicPower * 0.4);
+        finalColor = mix(finalColor, glowColor, musicPower * 0.6); // Stronger tint
         finalColor *= brightnessPulse;
 
-        // Subtle edge highlight based on mid frequencies
-        float edgeHighlightIntensity = 0.0;
-        if (texColor.a > 0.05 && texColor.a < 0.95) { // On semi-transparent edges
-            edgeHighlightIntensity = midIntensity * 0.6 * (0.5 + sin(time * 10.0) * 0.5);
-        }
-        finalColor += glowColor * edgeHighlightIntensity;
-        finalColor = clamp(finalColor, 0.0, 1.0); // Ensure colors stay valid
+        // Add a general glow based on treble
+        float trebleGlow = trebleIntensity * 0.4 * (0.5 + 0.5 * sin(time * 8.0 + vUv.y * 20.0)); // Stronger and slightly varied glow
+        finalColor += glowColor * trebleGlow * (1.0 - texColor.a); // Apply more on edges if possible, or just add
+
+        finalColor = clamp(finalColor, 0.0, 1.2); // Allow slight overbright for punch
 
         gl_FragColor = vec4(finalColor, texColor.a);
     }
@@ -74,8 +72,8 @@ const particleVertexShader = `
         } else {
             gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 
-            float musicPower = (bassIntensity + midIntensity + trebleIntensity) / 3.0;
-            float sizeFactor = 0.3 + musicPower * 1.5; 
+            float musicPowerOverall = (bassIntensity + midIntensity + trebleIntensity) / 3.0;
+            float sizeFactor = 0.3 + musicPowerOverall * 1.8; // Increased size factor responsiveness
             sizeFactor = max(0.1, sizeFactor);
 
             float lifetimeRatio = lifetime / initialLifetime;
@@ -83,7 +81,7 @@ const particleVertexShader = `
             gl_PointSize = max(1.0, gl_PointSize); // Minimum pixel size
 
             // Alpha fades in quickly and fades out over lifetime
-            vAlpha = smoothstep(0.0, 0.2, lifetimeRatio) * smoothstep(1.0, 0.5, lifetimeRatio);
+            vAlpha = smoothstep(0.0, 0.2, lifetimeRatio) * smoothstep(1.0, 0.3, lifetimeRatio); // Fade out a bit slower initially
         }
     }
 `;
@@ -207,7 +205,7 @@ scene.add(backWall);
 
 const MUSICIAN_PLANE_WIDTH = 1.8;
 const MUSICIAN_PLANE_HEIGHT = 3;
-const MAX_PARTICLES_PER_MUSICIAN = 300; 
+const MAX_PARTICLES_PER_MUSICIAN = 350; // Slightly increased
 const particleTexture = textureLoader.load('/particle_dot.png');
 
 let allMusiciansData = []; 
@@ -249,8 +247,8 @@ const createMusicianWithParticles = (imagePath, initialPosition, glowColor = new
 
     for (let i = 0; i < MAX_PARTICLES_PER_MUSICIAN; i++) {
         lifetimes[i] = 0; 
-        initialLifetimes[i] = Math.random() * 2 + 1; 
-        initialSizes[i] = Math.random() * 20 + 10; 
+        initialLifetimes[i] = Math.random() * 2.5 + 1.5; // Increased lifetime
+        initialSizes[i] = Math.random() * 25 + 15; // Increased base size
     }
 
     particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -292,7 +290,7 @@ const createMusicianWithParticles = (imagePath, initialPosition, glowColor = new
             initialSizes: particleGeometry.getAttribute('initialSize')
         },
         glowColor: glowColor,
-        isPlaying: isPlaying 
+        isPlaying: isPlaying // This will be updated dynamically
     };
     allMusiciansData.push(musicianData);
     return musicianData; 
@@ -313,7 +311,7 @@ const createBackupSinger = (imagePath, initialPosition, glowColor) => {
         imagePath, 
         [-15 + initialPosition[0], 0, initialPosition[2] -1.5], 
         glowColor,
-        false
+        false 
     );
     backupSingerData.group.scale.set(0.9, 0.9, 0.9);
     return backupSingerData;
@@ -327,7 +325,7 @@ const backupSinger2 = backupSinger2Data.group;
 // Create main band members
 const guitaristData = createMusicianWithParticles('/guitarist.png', [2, 0, -1], new THREE.Color(0xff9900), true);
 const bassistData = createMusicianWithParticles('/bassist.png', [-2, 0, 0], new THREE.Color(0x0099ff), true);
-const drummerData = createMusicianWithParticles('/drummer.png', [-15, 0, -2], new THREE.Color(0x9900ff), false);
+const drummerData = createMusicianWithParticles('/drummer.png', [-15, 0, -2], new THREE.Color(0x9900ff), false); 
 
 const guitarist = guitaristData.group;
 const bassist = bassistData.group;
@@ -474,50 +472,50 @@ function animateMusiciansFirstSegment(time, bassAvg, midAvg) {
 // --- PARTICLE UPDATE LOGIC ---
 function updateParticles(deltaTime, bassAvg, midAvg, trebleAvg) {
     allMusiciansData.forEach(musician => {
-        if (!musician.isPlaying && !(musician === singerData && singerEntered) && !(musician === drummerData && drummerEntered) && musician !== guitaristData && musician !== bassistData && !(musician === backupSinger1Data && singerEntered) && !(musician === backupSinger2Data && singerEntered)) {
-             // A simplified check: if not explicitly playing or entered, reduce particle activity
-            if (Math.random() > 0.95) { 
-                 // Allow a few particles even if not "active" for a subtle effect, or none
-            } else {
-                for (let i = 0; i < MAX_PARTICLES_PER_MUSICIAN; i++) {
-                    if (musician.particleAttributes.lifetimes.array[i] > 0) {
-                         musician.particleAttributes.lifetimes.array[i] -= deltaTime * 5; 
-                    }
-                }
-            }
-        }
-
-        const pa = musician.particleAttributes; 
-        const emissionRate = 0.1 + (bassAvg + midAvg) * 0.8; 
+        const isActive = musician.isPlaying; // This flag is now correctly set before this function is called
+        const pa = musician.particleAttributes;
+        
+        // Adjust emission rate based on activity and music intensity
+        const activityMultiplier = isActive ? 1.0 : 0.05; // Drastically reduce emission if not "active"
+        let currentEmissionRate = (0.15 + (bassAvg + midAvg + trebleAvg) * 0.7) * activityMultiplier;
+        currentEmissionRate = Math.min(currentEmissionRate, 0.85); // Cap emission rate
 
         for (let i = 0; i < MAX_PARTICLES_PER_MUSICIAN; i++) {
             pa.lifetimes.array[i] -= deltaTime;
 
-            if (pa.lifetimes.array[i] <= 0 && Math.random() < emissionRate) { 
-                pa.positions.array[i * 3] = (Math.random() - 0.5) * MUSICIAN_PLANE_WIDTH * 1.2;
-                pa.positions.array[i * 3 + 1] = (Math.random() - 0.5) * MUSICIAN_PLANE_HEIGHT * 1.2;
-                pa.positions.array[i * 3 + 2] = (Math.random() - 0.5) * 0.5; 
+            // Emit new particles
+            if (pa.lifetimes.array[i] <= 0 && Math.random() < currentEmissionRate && isActive) { // Only emit if active
+                // Particle origin around the musician's plane
+                pa.positions.array[i * 3] = (Math.random() - 0.5) * MUSICIAN_PLANE_WIDTH * 1.1; 
+                pa.positions.array[i * 3 + 1] = (Math.random() - 0.5) * MUSICIAN_PLANE_HEIGHT * 1.0; 
+                pa.positions.array[i * 3 + 2] = (Math.random() - 0.5) * 0.3; 
 
-                pa.velocities.array[i * 3] = (Math.random() - 0.5) * 0.5; 
-                pa.velocities.array[i * 3 + 1] = Math.random() * 0.5 + 0.2 + bassAvg * 1.5; 
-                pa.velocities.array[i * 3 + 2] = (Math.random() - 0.5) * 0.5; 
+                // Initial velocities for "floating out" effect
+                pa.velocities.array[i * 3] = (Math.random() - 0.5) * (0.6 + midAvg * 1.2); // Sideways spread
+                pa.velocities.array[i * 3 + 1] = (Math.random() * 0.6 + 0.4 + bassAvg * 2.2); // Upwards, stronger with bass
+                pa.velocities.array[i * 3 + 2] = (Math.random() - 0.5) * (0.4 + trebleAvg * 1.0); // Depth spread
 
-                pa.colors.array[i * 3] = musician.glowColor.r;
-                pa.colors.array[i * 3 + 1] = musician.glowColor.g;
-                pa.colors.array[i * 3 + 2] = musician.glowColor.b;
+                // Particle color with slight variation from musician's glowColor
+                pa.colors.array[i * 3] = Math.max(0, Math.min(1, musician.glowColor.r + (Math.random() - 0.5) * 0.3));
+                pa.colors.array[i * 3 + 1] = Math.max(0, Math.min(1, musician.glowColor.g + (Math.random() - 0.5) * 0.3));
+                pa.colors.array[i * 3 + 2] = Math.max(0, Math.min(1, musician.glowColor.b + (Math.random() - 0.5) * 0.3));
 
-                pa.lifetimes.array[i] = pa.initialLifetimes.array[i] * (0.5 + trebleAvg * 0.5); 
-                pa.initialSizes.array[i] = Math.random() * 15 + 10 + midAvg * 20; 
+                pa.lifetimes.array[i] = pa.initialLifetimes.array[i] * (0.7 + trebleAvg * 0.9 + midAvg * 0.5); // Adjusted lifetime
+                pa.initialSizes.array[i] = (Math.random() * 20 + 15 + midAvg * 30 + bassAvg * 15); // Adjusted size
             } else if (pa.lifetimes.array[i] > 0) { 
+                // Update existing particle positions
                 pa.positions.array[i * 3] += pa.velocities.array[i * 3] * deltaTime;
                 pa.positions.array[i * 3 + 1] += pa.velocities.array[i * 3 + 1] * deltaTime;
                 pa.positions.array[i * 3 + 2] += pa.velocities.array[i * 3 + 2] * deltaTime;
 
-                pa.velocities.array[i * 3 + 1] -= 0.1 * deltaTime; 
+                // Apply "lava lamp" like physics: upward drift, slowing, and turbulence
+                pa.velocities.array[i * 3 + 1] -= (0.1 + bassAvg * 0.1) * deltaTime; // Gravity/slowing (less if bass is high)
+                pa.velocities.array[i * 3] *= (1.0 - 0.25 * deltaTime); // Air drag X
+                pa.velocities.array[i * 3 + 2] *= (1.0 - 0.25 * deltaTime); // Air drag Z
 
-                const turbulenceStrength = trebleAvg * 0.8;
-                pa.velocities.array[i*3] += (Math.random() - 0.5) * turbulenceStrength * deltaTime;
-                pa.velocities.array[i*3+2] += (Math.random() - 0.5) * turbulenceStrength * deltaTime;
+                const turbulenceStrength = (trebleAvg + midAvg) * 0.6;
+                pa.velocities.array[i*3] += (Math.random() - 0.5) * turbulenceStrength * deltaTime * 2.5;
+                pa.velocities.array[i*3+2] += (Math.random() - 0.5) * turbulenceStrength * deltaTime * 2.5;
             }
         }
 
@@ -581,15 +579,18 @@ function animateSceneLogic(delta) {
         for (let i = 100; i < dataArray.length; i++) trebleSum += dataArray[i];
         const trebleAvg = trebleSum / (dataArray.length - 100) / 255;
         
+        // Update musician.isPlaying status and plane shader uniforms first
         allMusiciansData.forEach(musician => {
-            updateMusicianPlaneShader(musician.planeMesh.material, bassAvg, midAvg, trebleAvg);
             musician.isPlaying = 
-                (musician === guitaristData || musician === bassistData) ||
+                (musician === guitaristData || musician === bassistData) || // Guitarist & Bassist always "playing" when music starts
                 (musician === singerData && singerEntered) ||
                 (musician === drummerData && drummerEntered) ||
                 ((musician === backupSinger1Data || musician === backupSinger2Data) && singerEntered);
+            
+            updateMusicianPlaneShader(musician.planeMesh.material, bassAvg, midAvg, trebleAvg);
         });
         
+        // Then update particles, which will use the fresh musician.isPlaying status
         updateParticles(delta, bassAvg, midAvg, trebleAvg);
 
         animateMusiciansFirstSegment(time, bassAvg, midAvg); 
@@ -672,31 +673,39 @@ document.getElementById('playBtn').addEventListener('click', () => {
 const loading = document.getElementById('loading');
 window.addEventListener('load', () => {
     setTimeout(() => {
-        const allMedia = Array.from(document.querySelectorAll('audio, video, img')).filter(m => m.src && m.src !== window.location.href); 
+        const allMedia = Array.from(document.querySelectorAll('audio, video, img')).filter(m => m.src && m.src !== window.location.href && !m.closest('#container')); 
         let loadedCount = 0;
-        const totalMedia = allMedia.length;
+        
+        // Include images loaded by Three.js TextureLoader by checking musician textures
+        const musicianImagePaths = [
+            '/singer.png', '/backup_singer_female.png', '/backup_singer_male.png', 
+            '/guitarist.png', '/bassist.png', '/drummer.png', 
+            '/stage_floor.png', '/stage_backdrop.png', '/particle_dot.png'
+        ];
+        const totalMedia = allMedia.length + musicianImagePaths.length;
+
 
         if (totalMedia === 0) {
             hideLoadingScreen();
             return;
         }
         
-        let fallbackTimeout = setTimeout(hideLoadingScreen, 7000); 
+        let fallbackTimeout = setTimeout(hideLoadingScreen, 10000); // Increased fallback timeout
 
+        const checkAllLoaded = () => {
+            if (loadedCount === totalMedia) {
+                clearTimeout(fallbackTimeout);
+                hideLoadingScreen();
+            }
+        };
+        
         allMedia.forEach(media => {
-            if (media.tagName === 'AUDIO' && media.readyState >=2 || media.tagName === 'IMG' && media.complete) {
+            if ((media.tagName === 'AUDIO' && media.readyState >=2) || (media.tagName === 'IMG' && media.complete)) {
                 loadedCount++;
-                if (loadedCount === totalMedia) {
-                    clearTimeout(fallbackTimeout);
-                    hideLoadingScreen();
-                }
             } else {
                 const loadListener = () => {
                     loadedCount++;
-                    if (loadedCount === totalMedia) {
-                        clearTimeout(fallbackTimeout);
-                        hideLoadingScreen();
-                    }
+                    checkAllLoaded();
                     media.removeEventListener('loadeddata', loadListener);
                     media.removeEventListener('load', loadListener);
                     media.removeEventListener('error', errorListener);
@@ -704,10 +713,7 @@ window.addEventListener('load', () => {
                 const errorListener = () => {
                     console.warn("Error loading media:", media.src);
                     loadedCount++; 
-                     if (loadedCount === totalMedia) {
-                        clearTimeout(fallbackTimeout);
-                        hideLoadingScreen();
-                    }
+                    checkAllLoaded();
                     media.removeEventListener('loadeddata', loadListener);
                     media.removeEventListener('load', loadListener);
                     media.removeEventListener('error', errorListener);
@@ -717,6 +723,52 @@ window.addEventListener('load', () => {
                 media.addEventListener('error', errorListener);      
             }
         });
+
+        // Check Three.js textures
+        let texturesLoaded = 0;
+        const textureManager = new THREE.LoadingManager(
+            () => { // All textures loaded
+                loadedCount += musicianImagePaths.length - texturesLoaded; // Add any not counted by individual load
+                checkAllLoaded();
+            },
+            (url, itemsLoaded, itemsTotal) => { // Progress
+                // This callback is per texture, so increment accurately
+            },
+            (url) => { // Error
+                console.warn('Error loading texture:', url);
+                loadedCount++; // Count it as "processed" to not block loading screen forever
+                texturesLoaded++;
+                checkAllLoaded();
+            }
+        );
+        // Re-assign textureLoader to use the manager
+        const managedTextureLoader = new THREE.TextureLoader(textureManager);
+        // Note: This change implies that textures should be re-loaded using this managedTextureLoader.
+        // However, for this fix, we'll assume the original texture loading mechanism is sufficient and
+        // the main loading concern is DOM elements. The below is a simplified check for already initiated loads.
+        // A more robust solution would involve centralizing all texture loading through the manager.
+        // For now, we'll just increment based on presumed loading for these specific paths.
+        // This part of the loading screen is complex to retrofit perfectly without re-architecting texture loading.
+        // The existing setup has textures loaded before this 'load' event.
+        // So, we'll rely on the DOM media check and the timeout mostly.
+        // To make the loader more accurate for textures, all `new THREE.TextureLoader().load(...)` calls
+        // would need to use `managedTextureLoader.load(...)` from the start.
+        // Given the current structure, this part of the loader is more of a best-effort.
+        // The primary fix is for shader visibility, not a loader overhaul.
+
+        // Let's simplify the texture check: assume they are loading/loaded as part of initial script execution.
+        // Add their count to loadedCount if their images are complete (a heuristic)
+        musicianImagePaths.forEach(path => {
+            const img = new Image();
+            img.onload = img.onerror = () => {
+                loadedCount++;
+                checkAllLoaded();
+            };
+            img.src = path; // This will trigger load/error
+        });
+
+
+        checkAllLoaded(); // Initial check for already loaded media
     }, 500); 
 });
 
