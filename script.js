@@ -152,21 +152,22 @@ const backupSinger1 = createBackupSinger([-1, 0, 1], 0xff69b4);
 const backupSinger2 = createBackupSinger([1, 0, 1], 0xda70d6);
 
 // Create band members
-const createBandMember = (color, position) => {
+const createBandMember = (color, position, isPlaying = false) => {
     const memberGeometry = new THREE.CapsuleGeometry(0.25, 1.2, 4, 8);
     const memberMaterial = new THREE.MeshPhongMaterial({ color });
     const member = new THREE.Mesh(memberGeometry, memberMaterial);
     member.position.set(...position);
     member.position.y += 0.85;
+    member.userData.isPlaying = isPlaying; // Track if this member is actively playing
     scene.add(member);
     return member;
 };
 
 // Drummer - starts off-stage
-const drummer = createBandMember(0xff6347, [-15, 0, -2]);
-// Guitarist and bassist are on-stage from the start
-const guitarist = createBandMember(0x4169e1, [2, 0, -1]);
-const bassist = createBandMember(0x32cd32, [-2, 0, 0]);
+const drummer = createBandMember(0xff6347, [-15, 0, -2], false);
+// Guitarist and bassist are on-stage from the start and actively playing
+const guitarist = createBandMember(0x4169e1, [2, 0, -1], true);
+const bassist = createBandMember(0x32cd32, [-2, 0, 0], true);
 
 // Create a drum set (simplified)
 const createDrumSet = () => {
@@ -203,12 +204,12 @@ const createDrumSet = () => {
 
 const drumSet = createDrumSet();
 
-// Create guitars
-const createGuitar = (color, position) => {
+// Create guitars with more detail
+const createGuitar = (color, position, scale = 1) => {
     const guitar = new THREE.Group();
     
-    // Body
-    const bodyGeometry = new THREE.BoxGeometry(0.2, 0.5, 0.1);
+    // Body with more detailed shape
+    const bodyGeometry = new THREE.BoxGeometry(0.25, 0.5, 0.1);
     const bodyMaterial = new THREE.MeshPhongMaterial({ color });
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
     guitar.add(body);
@@ -220,15 +221,32 @@ const createGuitar = (color, position) => {
     neck.position.y = 0.6;
     guitar.add(neck);
     
+    // Headstock
+    const headstockGeometry = new THREE.BoxGeometry(0.1, 0.15, 0.05);
+    const headstock = new THREE.Mesh(headstockGeometry, neckMaterial);
+    headstock.position.y = 1.0;
+    guitar.add(headstock);
+    
+    // Strings
+    for (let i = 0; i < 4; i++) {
+        const stringGeometry = new THREE.BoxGeometry(0.01, 1.2, 0.01);
+        const stringMaterial = new THREE.MeshBasicMaterial({ color: 0xdddddd });
+        const string = new THREE.Mesh(stringGeometry, stringMaterial);
+        string.position.x = -0.035 + i * 0.025;
+        string.position.y = 0.5;
+        guitar.add(string);
+    }
+    
+    guitar.scale.set(scale, scale, scale);
     guitar.position.set(...position);
     scene.add(guitar);
     return guitar;
 };
 
-const guitar = createGuitar(0xdc143c, [2, 1, -1]);
+const guitar = createGuitar(0xdc143c, [2, 1, -1], 1.2);
 guitar.rotation.z = Math.PI / 4;
 
-const bass = createGuitar(0x000080, [-2, 1, 0]);
+const bass = createGuitar(0x000080, [-2, 1, 0], 1.3);
 bass.rotation.z = Math.PI / 4;
 
 // Audio setup
@@ -301,6 +319,44 @@ function animateBandEntrances() {
     }
 }
 
+// Specialized animation function for guitarist and bassist in first 30 seconds
+function animateMusiciansFirstSegment(time, bassAvg, midAvg) {
+    // More energetic movements for guitarist and bassist in the first 30 seconds
+    if (currentPlayTime < 30) {
+        // Guitarist energetic playing
+        guitarist.position.y = 0.85 + Math.sin(time * 5) * 0.15 * midAvg;
+        guitarist.rotation.x = Math.sin(time * 4) * 0.1 * midAvg;
+        guitar.rotation.z = Math.PI / 4 + Math.sin(time * 6) * 0.2 * midAvg;
+        
+        // Bassist movement timed with bass notes
+        bassist.position.y = 0.85 + Math.sin(time * 3) * 0.12 * bassAvg;
+        bassist.rotation.x = Math.sin(time * 2.5) * 0.08 * bassAvg;
+        bass.rotation.z = Math.PI / 4 + Math.sin(time * 3.5) * 0.15 * bassAvg;
+        
+        // Move camera to focus on guitarist and bassist
+        if (currentPlayTime < 10) {
+            camera.position.lerp(new THREE.Vector3(0, 2, 6), 0.01);
+            camera.lookAt(0, 1, 0);
+        } else if (currentPlayTime < 20) {
+            camera.position.lerp(new THREE.Vector3(3, 2, 4), 0.01);
+            camera.lookAt(guitarist.position);
+        } else {
+            camera.position.lerp(new THREE.Vector3(-3, 2, 4), 0.01);
+            camera.lookAt(bassist.position);
+        }
+    } else {
+        // Return to default camera position after 30 seconds
+        if (currentPlayTime < 32) {
+            camera.position.lerp(new THREE.Vector3(0, 1.5, 5), 0.01);
+            camera.lookAt(0, 1, 0);
+        }
+        
+        // Regular musician animations after 30 seconds
+        guitarist.position.y = 0.85 + Math.sin(time * 2) * 0.1 * midAvg;
+        bassist.position.y = 0.85 + Math.sin(time * 4) * 0.1 * bassAvg;
+    }
+}
+
 // Light animation
 function animateLights(delta) {
     time += delta;
@@ -335,6 +391,9 @@ function animateLights(delta) {
         spotLights[0].intensity = 2 + bassAvg * 5;
         spotLights[1].intensity = 2 + midAvg * 5;
         
+        // Animate musicians based on timeline
+        animateMusiciansFirstSegment(time, bassAvg, midAvg);
+        
         // Make singer move slightly with music (only if they're on stage)
         if (singerEntered) {
             singer.position.y = 1.5 + Math.sin(time * 3) * 0.1 * midAvg;
@@ -344,10 +403,6 @@ function animateLights(delta) {
             backupSinger1.position.y = 0.85 + Math.sin(time * 3 + 0.5) * 0.1 * midAvg;
             backupSinger2.position.y = 0.85 + Math.sin(time * 3 + 1) * 0.1 * midAvg;
         }
-        
-        // Guitar and bass player movement
-        guitarist.position.y = 0.85 + Math.sin(time * 2) * 0.1 * midAvg;
-        bassist.position.y = 0.85 + Math.sin(time * 4) * 0.1 * bassAvg;
         
         // Drummer movement (only if on stage)
         if (drummerEntered) {
