@@ -210,7 +210,7 @@ function initMusicianEffects() {
     musicianEffects.forEach(effect => effect.dispose());
     musicianEffects = [];
     
-    // Create new effects for each musician
+    // Create new effects for all musicians
     if (guitarist) {
         musicianEffects.push(new MusicianEffect(guitarist, musicianColors.guitarist, audioAnalyzer));
     }
@@ -223,15 +223,15 @@ function initMusicianEffects() {
         musicianEffects.push(new MusicianEffect(singer, musicianColors.singer, audioAnalyzer));
     }
     
-    if (drummer && drummerEntered) {
+    if (drummer) {
         musicianEffects.push(new MusicianEffect(drummer, musicianColors.drummer, audioAnalyzer));
     }
     
-    if (backupSinger1 && singerEntered) {
+    if (backupSinger1) {
         musicianEffects.push(new MusicianEffect(backupSinger1, musicianColors.backupSinger1, audioAnalyzer));
     }
     
-    if (backupSinger2 && singerEntered) {
+    if (backupSinger2) {
         musicianEffects.push(new MusicianEffect(backupSinger2, musicianColors.backupSinger2, audioAnalyzer));
     }
 }

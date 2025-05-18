@@ -36,6 +36,11 @@ varying vec3 vColor;
 void main() {
     vec4 texColor = texture2D(map, vUv);
     
+    // Discard fully transparent pixels immediately
+    if (texColor.a < 0.01) {
+        discard;
+    }
+    
     // Calculate distance to edge using alpha channel gradient
     float distanceToEdge = 0.0;
     if (texColor.a > 0.1 && texColor.a < 0.99) {
@@ -54,7 +59,7 @@ void main() {
     
     // Add the glow around the edges
     if (glowStrength > 0.0) {
-        finalColor = mix(finalColor, vec4(glowColor, 1.0), glowStrength);
+        finalColor = mix(finalColor, vec4(glowColor, texColor.a), glowStrength);
     }
     
     gl_FragColor = finalColor;
@@ -117,7 +122,8 @@ class MusicianEffect {
             vertexShader: vertexShader,
             fragmentShader: fragmentShader,
             transparent: true,
-            side: THREE.DoubleSide
+            side: THREE.DoubleSide,
+            alphaTest: 0.01 // Improve transparency handling
         });
         
         // Store original material
@@ -134,21 +140,43 @@ class MusicianEffect {
         const particleCount = 500;
         const particleGeometry = new THREE.BufferGeometry();
         
+        // Get musician dimensions
+        const width = this.musician.geometry.parameters.width;
+        const height = this.musician.geometry.parameters.height;
+        
         // Create initial empty positions
         const positions = new Float32Array(particleCount * 3);
         const colors = new Float32Array(particleCount * 3);
         const sizes = new Float32Array(particleCount);
         
-        // Set initial values
+        // Set initial values - position particles around the outline of the musician
         for (let i = 0; i < particleCount; i++) {
-            // Random positions initially around the musician
-            const x = (Math.random() - 0.5) * 0.5 + this.musician.position.x;
-            const y = Math.random() * this.musician.geometry.parameters.height + this.musician.position.y - this.musician.geometry.parameters.height/2;
-            const z = (Math.random() - 0.5) * 0.3 + this.musician.position.z + 0.05;
+            // Choose edge distribution: top, right, bottom, left
+            const edge = Math.random();
+            let x, y;
             
+            if (edge < 0.25) {
+                // Top edge
+                x = (Math.random() - 0.5) * width * 0.8;
+                y = height / 2 * 0.9;
+            } else if (edge < 0.5) {
+                // Right edge
+                x = width / 2 * 0.8;
+                y = (Math.random() - 0.5) * height * 0.9;
+            } else if (edge < 0.75) {
+                // Bottom edge
+                x = (Math.random() - 0.5) * width * 0.8;
+                y = -height / 2 * 0.9;
+            } else {
+                // Left edge
+                x = -width / 2 * 0.8;
+                y = (Math.random() - 0.5) * height * 0.9;
+            }
+            
+            // Position relative to the musician's center
             positions[i * 3] = x;
             positions[i * 3 + 1] = y;
-            positions[i * 3 + 2] = z;
+            positions[i * 3 + 2] = 0.1; // Slightly in front of the musician plane
             
             // Color variation based on base color
             colors[i * 3] = this.baseColor.r + (Math.random() * 0.2 - 0.1);
@@ -192,9 +220,8 @@ class MusicianEffect {
             this.particleSystem.userData.particleLifetimes[i] = Math.random() * 2;
         }
         
-        // Add to scene at the same position as the musician
-        this.particleSystem.position.copy(this.musician.position);
-        this.musician.parent.add(this.particleSystem);
+        // Add particle system as a child of the musician to inherit its position and orientation
+        this.musician.add(this.particleSystem);
     }
     
     update(time, audioData) {
@@ -227,42 +254,42 @@ class MusicianEffect {
             const velocities = this.particleSystem.userData.particleVelocities;
             const lifetimes = this.particleSystem.userData.particleLifetimes;
             
+            // Get musician dimensions for respawning particles
+            const width = this.musician.geometry.parameters.width;
+            const height = this.musician.geometry.parameters.height;
+            
             for (let i = 0; i < positions.length / 3; i++) {
                 // Update lifetime
                 lifetimes[i] -= 0.016; // Roughly based on 60fps
                 
                 // If particle died, respawn it at the musician's silhouette
                 if (lifetimes[i] <= 0) {
-                    // Calculate a random position on the musician's silhouette
-                    const width = this.musician.geometry.parameters.width;
-                    const height = this.musician.geometry.parameters.height;
-                    
                     // Generate points along the silhouette
                     const edge = Math.random();
                     let x, y;
                     
                     if (edge < 0.25) {
                         // Top edge
-                        x = (Math.random() - 0.5) * width;
-                        y = height / 2;
+                        x = (Math.random() - 0.5) * width * 0.8;
+                        y = height / 2 * 0.9;
                     } else if (edge < 0.5) {
                         // Right edge
-                        x = width / 2;
-                        y = (Math.random() - 0.5) * height;
+                        x = width / 2 * 0.8;
+                        y = (Math.random() - 0.5) * height * 0.9;
                     } else if (edge < 0.75) {
                         // Bottom edge
-                        x = (Math.random() - 0.5) * width;
-                        y = -height / 2;
+                        x = (Math.random() - 0.5) * width * 0.8;
+                        y = -height / 2 * 0.9;
                     } else {
                         // Left edge
-                        x = -width / 2;
-                        y = (Math.random() - 0.5) * height;
+                        x = -width / 2 * 0.8;
+                        y = (Math.random() - 0.5) * height * 0.9;
                     }
                     
-                    // Set new position relative to musician position
-                    positions[i * 3] = x + this.musician.position.x;
-                    positions[i * 3 + 1] = y + this.musician.position.y;
-                    positions[i * 3 + 2] = this.musician.position.z + 0.05;
+                    // Set new position
+                    positions[i * 3] = x;
+                    positions[i * 3 + 1] = y;
+                    positions[i * 3 + 2] = 0.1; // Slightly in front of musician
                     
                     // Random new velocity influenced by audio intensity
                     velocities[i * 3] = (Math.random() - 0.5) * 0.04 * (1 + audioData.intensity);
@@ -309,7 +336,7 @@ class MusicianEffect {
         }
         
         if (this.particleSystem) {
-            this.musician.parent.remove(this.particleSystem);
+            this.musician.remove(this.particleSystem);
             this.particleSystem.geometry.dispose();
             this.particleSystem.material.dispose();
         }
