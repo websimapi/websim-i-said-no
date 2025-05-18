@@ -2,6 +2,51 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
+// Define the shader for the musician glow effect
+const musicianVertexShader = `
+    varying vec2 vUv;
+    void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+`;
+
+const musicianFragmentShader = `
+    uniform sampler2D map;
+    uniform float time;
+    uniform float bassIntensity;
+    uniform float midIntensity;
+    uniform float trebleIntensity;
+    uniform vec3 glowColor;
+    uniform float glowRange;
+    
+    varying vec2 vUv;
+    
+    void main() {
+        vec4 texColor = texture2D(map, vUv);
+        
+        // If pixel is transparent or semi-transparent, it's potentially part of the outline
+        if (texColor.a < 0.99 && texColor.a > 0.01) {
+            // Create dynamic glow based on music intensity
+            float glowStrength = bassIntensity * 0.5 + midIntensity * 0.3 + trebleIntensity * 0.2;
+            
+            // Pulse effect based on time and music intensity
+            float pulse = sin(time * 5.0) * 0.5 + 0.5;
+            
+            // Apply glow with pulse effect along edge pixels
+            vec3 glow = glowColor * glowStrength * (1.0 + pulse);
+            
+            // Modify the edge color with the glow
+            texColor.rgb = mix(texColor.rgb, glow, 0.7 * (1.0 - texColor.a) * glowRange);
+            
+            // Make edge more opaque based on intensity
+            texColor.a = mix(texColor.a, texColor.a + 0.3 * glowStrength, 0.7);
+        }
+        
+        gl_FragColor = texColor;
+    }
+`;
+
 // Scene setup
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
@@ -109,76 +154,66 @@ scene.add(backWall);
 const MUSICIAN_PLANE_WIDTH = 1.8;
 const MUSICIAN_PLANE_HEIGHT = 3;
 
-// Create singer using textured plane
-const createSinger = () => {
-    const singerTexture = textureLoader.load('/singer.png');
-    const singerMaterial = new THREE.MeshBasicMaterial({
-        map: singerTexture,
+// Create musician with shader
+const createMusicianWithShader = (imagePath, initialPosition, glowColor = new THREE.Color(0xff0000), isPlaying = false) => {
+    const texture = textureLoader.load(imagePath);
+    
+    // Create custom shader material
+    const shaderMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            map: { value: texture },
+            time: { value: 0.0 },
+            bassIntensity: { value: 0.0 },
+            midIntensity: { value: 0.0 },
+            trebleIntensity: { value: 0.0 },
+            glowColor: { value: glowColor },
+            glowRange: { value: 1.0 }
+        },
+        vertexShader: musicianVertexShader,
+        fragmentShader: musicianFragmentShader,
         transparent: true,
         side: THREE.DoubleSide
     });
-    const singerGeometry = new THREE.PlaneGeometry(MUSICIAN_PLANE_WIDTH, MUSICIAN_PLANE_HEIGHT);
-    const singerMesh = new THREE.Mesh(singerGeometry, singerMaterial);
-    singerMesh.position.set(0, MUSICIAN_PLANE_HEIGHT / 2, 0);
     
-    // Start singer off-stage (will come in at 27.5 seconds)
-    singerMesh.position.x = -15;
-    
-    scene.add(singerMesh);
-    return singerMesh;
-};
-
-const singer = createSinger();
-
-// Create backup singers
-const createBackupSinger = (imagePath, initialPosition) => {
-    const texture = textureLoader.load(imagePath);
-    const material = new THREE.MeshBasicMaterial({
-        map: texture,
-        transparent: true,
-        side: THREE.DoubleSide,
-    });
-    const geometry = new THREE.PlaneGeometry(MUSICIAN_PLANE_WIDTH * 0.9, MUSICIAN_PLANE_HEIGHT * 0.9); 
-    const backupSinger = new THREE.Mesh(geometry, material);
-    
-    // Start backup singers off-stage, positioned further back
-    // The X position will be updated during animation.
-    // The Z position is set here relative to the main singer's plane.
-    backupSinger.position.set(-15 + initialPosition[0], (MUSICIAN_PLANE_HEIGHT * 0.9) / 2, initialPosition[2] -1.5); 
-    scene.add(backupSinger);
-    return backupSinger;
-};
-
-// Backup singers - initial positions are for their off-stage starting point.
-// Their final animated positions will be further left/right.
-// Original X positions were -1.5 and 1.5 relative to center. Let's keep initial relative X the same for the off-stage start.
-const backupSinger1 = createBackupSinger('/backup_singer_female.png', [-3.5, 0, 1]); // More left
-const backupSinger2 = createBackupSinger('/backup_singer_male.png', [3.5, 0, 1]);  // More right
-
-// Generic function to create a musician plane
-const createMusicianPlane = (imagePath, initialPosition, isPlaying = false) => {
-    const texture = textureLoader.load(imagePath);
-    const material = new THREE.MeshBasicMaterial({
-        map: texture,
-        transparent: true,
-        side: THREE.DoubleSide,
-    });
     const geometry = new THREE.PlaneGeometry(MUSICIAN_PLANE_WIDTH, MUSICIAN_PLANE_HEIGHT);
-    const musician = new THREE.Mesh(geometry, material);
+    const musician = new THREE.Mesh(geometry, shaderMaterial);
     musician.position.set(initialPosition[0], MUSICIAN_PLANE_HEIGHT / 2, initialPosition[2]);
     musician.userData.isPlaying = isPlaying;
     scene.add(musician);
     return musician;
 };
 
-// Guitarist - on-stage from the start and actively playing
-const guitarist = createMusicianPlane('/guitarist.png', [2, 0, -1], true);
+// Replace the existing musician creation functions with new shader versions
+const createSinger = () => {
+    const singerMesh = createMusicianWithShader('/singer.png', [0, 0, 0], new THREE.Color(0xffffff));
+    // Start singer off-stage
+    singerMesh.position.x = -15;
+    return singerMesh;
+};
 
-// Bassist - on-stage from the start and actively playing
-const bassist = createMusicianPlane('/bassist.png', [-2, 0, 0], true);
+const singer = createSinger();
 
-// Drummer - starts off-stage
-const drummer = createMusicianPlane('/drummer.png', [-15, 0, -2], false);
+// Create backup singers
+const createBackupSinger = (imagePath, initialPosition, glowColor) => {
+    const backupSinger = createMusicianWithShader(
+        imagePath, 
+        [-15 + initialPosition[0], 0, initialPosition[2] -1.5], 
+        glowColor,
+        false
+    );
+    // Adjust scale for backup singers
+    backupSinger.scale.set(0.9, 0.9, 0.9);
+    return backupSinger;
+};
+
+// Backup singers with unique glow colors
+const backupSinger1 = createBackupSinger('/backup_singer_female.png', [-3.5, 0, 1], new THREE.Color(0xff6699));
+const backupSinger2 = createBackupSinger('/backup_singer_male.png', [3.5, 0, 1], new THREE.Color(0x66ff99));
+
+// Create main band members with their specific glow colors
+const guitarist = createMusicianWithShader('/guitarist.png', [2, 0, -1], new THREE.Color(0xff9900), true);
+const bassist = createMusicianWithShader('/bassist.png', [-2, 0, 0], new THREE.Color(0x0099ff), true);
+const drummer = createMusicianWithShader('/drummer.png', [-15, 0, -2], new THREE.Color(0x9900ff), false);
 
 // Audio setup
 const audioElement = document.getElementById('music');
@@ -285,44 +320,6 @@ function animateBandEntrances() {
     }
 }
 
-// Specialized animation function for guitarist and bassist in first 25 seconds
-function animateMusiciansFirstSegment(time, bassAvg, midAvg) {
-    const musicianBaseY = MUSICIAN_PLANE_HEIGHT / 2; 
-
-    // More energetic movements for guitarist and bassist in the first 25 seconds
-    if (currentPlayTime < 25) {
-        // Guitarist energetic playing
-        guitarist.position.y = musicianBaseY + Math.sin(time * 5) * 0.15 * midAvg;
-        guitarist.rotation.x = Math.sin(time * 4) * 0.1 * midAvg;
-        
-        // Bassist movement timed with bass notes
-        bassist.position.y = musicianBaseY + Math.sin(time * 3) * 0.12 * bassAvg;
-        bassist.rotation.x = Math.sin(time * 2.5) * 0.08 * bassAvg;
-        
-        // Move camera to focus on guitarist and bassist
-        if (currentPlayTime < 10) {
-            camera.position.lerp(new THREE.Vector3(0, 2, 6), 0.01);
-            camera.lookAt(0, 1, 0);
-        } else if (currentPlayTime < 20) {
-            camera.position.lerp(new THREE.Vector3(3, 2, 4), 0.01);
-            camera.lookAt(guitarist.position);
-        } else {
-            camera.position.lerp(new THREE.Vector3(-3, 2, 4), 0.01);
-            camera.lookAt(bassist.position);
-        }
-    } else {
-        // Return to default camera position after 25 seconds
-        if (currentPlayTime < 27) {
-            camera.position.lerp(new THREE.Vector3(0, 1.5, 5), 0.01);
-            camera.lookAt(0, 1, 0);
-        }
-        
-        // Regular musician animations after 25 seconds
-        guitarist.position.y = musicianBaseY + Math.sin(time * 2) * 0.1 * midAvg;
-        bassist.position.y = musicianBaseY + Math.sin(time * 4) * 0.1 * bassAvg;
-    }
-}
-
 // Camera movement based on current time
 function updateCameraPosition() {
     if (!isPlaying) return;
@@ -363,15 +360,53 @@ function updateCameraPosition() {
     }
 }
 
+// Specialized animation function for guitarist and bassist in first 25 seconds
+function animateMusiciansFirstSegment(time, bassAvg, midAvg) {
+    const musicianBaseY = MUSICIAN_PLANE_HEIGHT / 2; 
+
+    // More energetic movements for guitarist and bassist in the first 25 seconds
+    if (currentPlayTime < 25) {
+        // Guitarist energetic playing
+        guitarist.position.y = musicianBaseY + Math.sin(time * 5) * 0.15 * midAvg;
+        guitarist.rotation.x = Math.sin(time * 4) * 0.1 * midAvg;
+        
+        // Bassist movement timed with bass notes
+        bassist.position.y = musicianBaseY + Math.sin(time * 3) * 0.12 * bassAvg;
+        bassist.rotation.x = Math.sin(time * 2.5) * 0.08 * bassAvg;
+        
+        // Move camera to focus on guitarist and bassist
+        if (currentPlayTime < 10) {
+            camera.position.lerp(new THREE.Vector3(0, 2, 6), 0.01);
+            camera.lookAt(0, 1, 0);
+        } else if (currentPlayTime < 20) {
+            camera.position.lerp(new THREE.Vector3(3, 2, 4), 0.01);
+            camera.lookAt(guitarist.position);
+        } else {
+            camera.position.lerp(new THREE.Vector3(-3, 2, 4), 0.01);
+            camera.lookAt(bassist.position);
+        }
+    } else {
+        // Return to default camera position after 25 seconds
+        if (currentPlayTime < 27) {
+            camera.position.lerp(new THREE.Vector3(0, 1.5, 5), 0.01);
+            camera.lookAt(0, 1, 0);
+        }
+        
+        // Regular musician animations after 25 seconds
+        guitarist.position.y = musicianBaseY + Math.sin(time * 2) * 0.1 * midAvg;
+        bassist.position.y = musicianBaseY + Math.sin(time * 4) * 0.1 * bassAvg;
+    }
+}
+
 // Light animation with spotlight focus
 function animateLights(delta) {
     time += delta;
     const musicianBaseY = MUSICIAN_PLANE_HEIGHT / 2; 
     const backupSingerBaseY = (MUSICIAN_PLANE_HEIGHT * 0.9) / 2; 
 
-    // Update spotlight targets to follow musicians
+    // Update spotlight targets and other existing code...
+    // Update spotlight targets
     if (isPlaying) {
-        // Update spotlight targets
         guitaristSpot.target.position.copy(guitarist.position);
         bassistSpot.target.position.copy(bassist.position);
         
@@ -407,75 +442,88 @@ function animateLights(delta) {
     if (dataArray && isPlaying) {
         analyser.getByteFrequencyData(dataArray);
         
-        // Get average of bass frequencies
+        // Get average of bass frequencies (0-10)
         let bassSum = 0;
         for (let i = 0; i < 10; i++) {
             bassSum += dataArray[i];
         }
         const bassAvg = bassSum / 10 / 255;
         
-        // Get average of mid frequencies
+        // Get average of mid frequencies (10-100)
         let midSum = 0;
         for (let i = 10; i < 100; i++) {
             midSum += dataArray[i];
         }
         const midAvg = midSum / 90 / 255;
         
-        // Adjust spotlight intensities based on music and current focus
-        spotLights[0].intensity = 2 + bassAvg * 5;
-        spotLights[1].intensity = 2 + midAvg * 5;
+        // Get average of treble frequencies (100-255)
+        let trebleSum = 0;
+        for (let i = 100; i < dataArray.length; i++) {
+            trebleSum += dataArray[i];
+        }
+        const trebleAvg = trebleSum / (dataArray.length - 100) / 255;
         
-        // Enhancement for musician-specific spotlights
+        // Update shader uniforms for all musicians
+        updateMusicianShader(singer.material, bassAvg, midAvg, trebleAvg);
+        updateMusicianShader(guitarist.material, bassAvg, midAvg, trebleAvg);
+        updateMusicianShader(bassist.material, bassAvg, midAvg, trebleAvg);
+        updateMusicianShader(drummer.material, bassAvg, midAvg, trebleAvg);
+        updateMusicianShader(backupSinger1.material, bassAvg, midAvg, trebleAvg);
+        updateMusicianShader(backupSinger2.material, bassAvg, midAvg, trebleAvg);
+        
+        // Adjust shader glow range based on current focus
         if (currentPlayTime < 27.5) {
-            // First section: focus on guitarist and bassist
-            guitaristSpot.intensity = 3 + midAvg * 3;
-            bassistSpot.intensity = 3 + bassAvg * 3;
+            // First section: guitarist and bassist highlighted
+            guitarist.material.uniforms.glowRange.value = 2.0 + midAvg * 2.0;
+            bassist.material.uniforms.glowRange.value = 2.0 + bassAvg * 2.0;
+            singer.material.uniforms.glowRange.value = 0.5;
+            drummer.material.uniforms.glowRange.value = 0.5;
+            backupSinger1.material.uniforms.glowRange.value = 0.5;
+            backupSinger2.material.uniforms.glowRange.value = 0.5;
         } else if (currentPlayTime < 55) {
-            // Second section: focus on singer and backup singers
-            guitaristSpot.intensity = 2 + midAvg * 2;
-            bassistSpot.intensity = 2 + bassAvg * 2;
-            if (singerEntered) {
-                singerSpot.intensity = 4 + midAvg * 4;
-                backupSpot1.intensity = 2 + midAvg * 2;
-                backupSpot2.intensity = 2 + midAvg * 2;
-            }
+            // Second section: singer and backup singers highlighted
+            guitarist.material.uniforms.glowRange.value = 1.0;
+            bassist.material.uniforms.glowRange.value = 1.0;
+            singer.material.uniforms.glowRange.value = 2.0 + midAvg * 2.0;
+            drummer.material.uniforms.glowRange.value = 0.5;
+            backupSinger1.material.uniforms.glowRange.value = 1.5 + midAvg * 1.5;
+            backupSinger2.material.uniforms.glowRange.value = 1.5 + midAvg * 1.5;
         } else {
-            // After drummer enters
+            // After drummer enters - cycle highlighting based on focus
             const timePhase = ((currentPlayTime - 55) % 40) / 40; // 0 to 1 phase over 40 seconds
             
-            // Cycle spotlight intensities based on who's in focus
             if (timePhase < 0.25) {
                 // Drummer focus
-                drummerSpot.intensity = 3.5 + bassAvg * 3;
-                guitaristSpot.intensity = 1.5 + midAvg;
-                bassistSpot.intensity = 1.5 + bassAvg;
-                singerSpot.intensity = 2 + midAvg;
-                backupSpot1.intensity = 1 + midAvg * 0.5;
-                backupSpot2.intensity = 1 + midAvg * 0.5;
+                drummer.material.uniforms.glowRange.value = 2.0 + bassAvg * 2.0;
+                guitarist.material.uniforms.glowRange.value = 1.0;
+                bassist.material.uniforms.glowRange.value = 1.0;
+                singer.material.uniforms.glowRange.value = 1.0;
+                backupSinger1.material.uniforms.glowRange.value = 0.8;
+                backupSinger2.material.uniforms.glowRange.value = 0.8;
             } else if (timePhase < 0.5) {
                 // Singer focus
-                drummerSpot.intensity = 2 + bassAvg;
-                guitaristSpot.intensity = 2 + midAvg;
-                bassistSpot.intensity = 2 + bassAvg;
-                singerSpot.intensity = 4 + midAvg * 4;
-                backupSpot1.intensity = 2 + midAvg * 1.5;
-                backupSpot2.intensity = 2 + midAvg * 1.5;
+                drummer.material.uniforms.glowRange.value = 1.0;
+                guitarist.material.uniforms.glowRange.value = 1.0;
+                bassist.material.uniforms.glowRange.value = 1.0;
+                singer.material.uniforms.glowRange.value = 2.0 + midAvg * 2.0;
+                backupSinger1.material.uniforms.glowRange.value = 1.5 + midAvg * 1.0;
+                backupSinger2.material.uniforms.glowRange.value = 1.5 + midAvg * 1.0;
             } else if (timePhase < 0.75) {
                 // Guitarist focus
-                drummerSpot.intensity = 2 + bassAvg;
-                guitaristSpot.intensity = 3.5 + midAvg * 3;
-                bassistSpot.intensity = 1.5 + bassAvg;
-                singerSpot.intensity = 2 + midAvg;
-                backupSpot1.intensity = 1 + midAvg * 0.5;
-                backupSpot2.intensity = 1 + midAvg * 0.5;
+                drummer.material.uniforms.glowRange.value = 1.0;
+                guitarist.material.uniforms.glowRange.value = 2.0 + midAvg * 2.0;
+                bassist.material.uniforms.glowRange.value = 1.0;
+                singer.material.uniforms.glowRange.value = 1.0;
+                backupSinger1.material.uniforms.glowRange.value = 0.8;
+                backupSinger2.material.uniforms.glowRange.value = 0.8;
             } else {
                 // Bassist focus
-                drummerSpot.intensity = 2 + bassAvg;
-                guitaristSpot.intensity = 1.5 + midAvg;
-                bassistSpot.intensity = 3.5 + bassAvg * 3;
-                singerSpot.intensity = 2 + midAvg;
-                backupSpot1.intensity = 1 + midAvg * 0.5;
-                backupSpot2.intensity = 1 + midAvg * 0.5;
+                drummer.material.uniforms.glowRange.value = 1.0;
+                guitarist.material.uniforms.glowRange.value = 1.0;
+                bassist.material.uniforms.glowRange.value = 2.0 + bassAvg * 2.0;
+                singer.material.uniforms.glowRange.value = 1.0;
+                backupSinger1.material.uniforms.glowRange.value = 0.8;
+                backupSinger2.material.uniforms.glowRange.value = 0.8;
             }
         }
         
@@ -500,6 +548,16 @@ function animateLights(delta) {
             // Add a bit of rotation for the drummer for more dynamism
             drummer.rotation.y = Math.sin(time * 0.5) * 0.1; 
         }
+    }
+}
+
+// Helper function to update musician shader uniforms
+function updateMusicianShader(material, bassAvg, midAvg, trebleAvg) {
+    if (material && material.uniforms) {
+        material.uniforms.time.value = time;
+        material.uniforms.bassIntensity.value = bassAvg;
+        material.uniforms.midIntensity.value = midAvg;
+        material.uniforms.trebleIntensity.value = trebleAvg;
     }
 }
 
