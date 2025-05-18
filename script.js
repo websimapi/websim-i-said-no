@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { AudioAnalyzer } from './audioAnalyzer.js';
+import { MusicianEffect } from './musicianShader.js';
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -13,6 +16,8 @@ camera.position.set(0, 1.5, 5);
 // Renderer setup
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
+// renderer.shadowMap.enabled = true; 
+// renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
 renderer.outputEncoding = THREE.sRGBEncoding;
 document.getElementById('container').appendChild(renderer.domElement);
 
@@ -87,6 +92,7 @@ stageTexture.repeat.set(4, 3);
 const stageMaterial = new THREE.MeshPhongMaterial({ map: stageTexture }); 
 const stage = new THREE.Mesh(stageGeometry, stageMaterial);
 stage.position.y = -0.25;
+// stage.receiveShadow = true; 
 scene.add(stage);
 
 // Back wall with lighting effects and curtains
@@ -105,19 +111,13 @@ scene.add(backWall);
 const MUSICIAN_PLANE_WIDTH = 1.8;
 const MUSICIAN_PLANE_HEIGHT = 3;
 
-// Create musician arrays to easily manage effects
-const musicians = [];
-
 // Create singer using textured plane
 const createSinger = () => {
-    const singerTexture = textureLoader.load('/singer.png', (texture) => {
-        texture.premultiplyAlpha = false; // Important for proper transparency
-    });
+    const singerTexture = textureLoader.load('/singer.png');
     const singerMaterial = new THREE.MeshBasicMaterial({
         map: singerTexture,
         transparent: true,
-        side: THREE.DoubleSide,
-        alphaTest: 0.1 // Helps with transparency edge issues
+        side: THREE.DoubleSide
     });
     const singerGeometry = new THREE.PlaneGeometry(MUSICIAN_PLANE_WIDTH, MUSICIAN_PLANE_HEIGHT);
     const singerMesh = new THREE.Mesh(singerGeometry, singerMaterial);
@@ -127,7 +127,6 @@ const createSinger = () => {
     singerMesh.position.x = -15;
     
     scene.add(singerMesh);
-    musicians.push({ mesh: singerMesh, type: 'singer' });
     return singerMesh;
 };
 
@@ -135,47 +134,42 @@ const singer = createSinger();
 
 // Create backup singers
 const createBackupSinger = (imagePath, initialPosition) => {
-    const texture = textureLoader.load(imagePath, (texture) => {
-        texture.premultiplyAlpha = false; // Important for proper transparency
-    });
+    const texture = textureLoader.load(imagePath);
     const material = new THREE.MeshBasicMaterial({
         map: texture,
         transparent: true,
         side: THREE.DoubleSide,
-        alphaTest: 0.1 // Helps with transparency edge issues
     });
     const geometry = new THREE.PlaneGeometry(MUSICIAN_PLANE_WIDTH * 0.9, MUSICIAN_PLANE_HEIGHT * 0.9); 
     const backupSinger = new THREE.Mesh(geometry, material);
     
     // Start backup singers off-stage, positioned further back
+    // The X position will be updated during animation.
+    // The Z position is set here relative to the main singer's plane.
     backupSinger.position.set(-15 + initialPosition[0], (MUSICIAN_PLANE_HEIGHT * 0.9) / 2, initialPosition[2] -1.5); 
     scene.add(backupSinger);
-    musicians.push({ mesh: backupSinger, type: 'backup' });
     return backupSinger;
 };
 
 // Backup singers - initial positions are for their off-stage starting point.
+// Their final animated positions will be further left/right.
+// Original X positions were -1.5 and 1.5 relative to center. Let's keep initial relative X the same for the off-stage start.
 const backupSinger1 = createBackupSinger('/backup_singer_female.png', [-3.5, 0, 1]); // More left
 const backupSinger2 = createBackupSinger('/backup_singer_male.png', [3.5, 0, 1]);  // More right
 
 // Generic function to create a musician plane
 const createMusicianPlane = (imagePath, initialPosition, isPlaying = false) => {
-    const texture = textureLoader.load(imagePath, (texture) => {
-        texture.premultiplyAlpha = false; // Important for proper transparency
-    });
+    const texture = textureLoader.load(imagePath);
     const material = new THREE.MeshBasicMaterial({
         map: texture,
         transparent: true,
         side: THREE.DoubleSide,
-        alphaTest: 0.1 // Helps with transparency edge issues
     });
     const geometry = new THREE.PlaneGeometry(MUSICIAN_PLANE_WIDTH, MUSICIAN_PLANE_HEIGHT);
     const musician = new THREE.Mesh(geometry, material);
     musician.position.set(initialPosition[0], MUSICIAN_PLANE_HEIGHT / 2, initialPosition[2]);
     musician.userData.isPlaying = isPlaying;
     scene.add(musician);
-    musicians.push({ mesh: musician, type: imagePath.includes('guitarist') ? 'guitarist' : 
-                          imagePath.includes('bassist') ? 'bassist' : 'drummer' });
     return musician;
 };
 
@@ -188,376 +182,58 @@ const bassist = createMusicianPlane('/bassist.png', [-2, 0, 0], true);
 // Drummer - starts off-stage
 const drummer = createMusicianPlane('/drummer.png', [-15, 0, -2], false);
 
-// Function to create the edge-based lava effect for a musician
-const createMusicianLavaEffect = (musician, baseColor) => {
-    // Create a group to hold the effect
-    const effectGroup = new THREE.Group();
-    effectGroup.position.copy(musician.position);
-    scene.add(effectGroup);
-    
-    const width = MUSICIAN_PLANE_WIDTH;
-    const height = MUSICIAN_PLANE_HEIGHT;
-    
-    // Edge detection parameters
-    const edgeCount = 80; // Number of edge points to detect
-    const particlesPerEdge = 60; // Number of particles per edge point
-    
-    // Create an array to store edge points
-    const edgePoints = [];
-    
-    // Generate edge points around musician silhouette
-    for (let i = 0; i < edgeCount; i++) {
-        const angle = (i / edgeCount) * Math.PI * 2;
-        
-        // Create human-like silhouette shape
-        let radius;
-        
-        // Head (top)
-        if (angle > Math.PI * 1.75 || angle < Math.PI * 0.25) {
-            radius = width * 0.25;
-        } 
-        // Shoulders (upper sides)
-        else if (angle < Math.PI * 0.6 || angle > Math.PI * 1.4) {
-            radius = width * 0.4;
-        }
-        // Arms/torso (middle)
-        else if (angle < Math.PI * 1.0) {
-            radius = width * 0.3 - (Math.abs(angle - Math.PI * 0.8) * 0.2);
-        }
-        // Legs (bottom)
-        else {
-            radius = width * 0.3 - (Math.abs(angle - Math.PI * 1.2) * 0.2);
-        }
-        
-        // Adjust Y position based on angle to create humanoid shape
-        const normalizedAngle = (angle / (Math.PI * 2));
-        const yOffset = height * 0.5 - height * normalizedAngle;
-        
-        // Store edge point
-        edgePoints.push({
-            x: Math.cos(angle) * radius,
-            y: yOffset,
-            z: Math.sin(angle) * radius * 0.2,
-            angle: angle
-        });
-    }
-    
-    // Create particle geometry for edge-based effect
-    const particleCount = edgeCount * particlesPerEdge;
-    const particleGeometry = new THREE.BufferGeometry();
-    
-    // Create arrays for particles
-    const positions = new Float32Array(particleCount * 3);
-    const colors = new Float32Array(particleCount * 3);
-    const sizes = new Float32Array(particleCount);
-    const angles = new Float32Array(particleCount);
-    const offsets = new Float32Array(particleCount);
-    const edgeIndices = new Float32Array(particleCount);
-    
-    // Create particles starting from each edge point
-    for (let i = 0; i < edgeCount; i++) {
-        const edgePoint = edgePoints[i];
-        
-        for (let j = 0; j < particlesPerEdge; j++) {
-            const idx = (i * particlesPerEdge + j);
-            const i3 = idx * 3;
-            
-            // Start positions at edge points
-            positions[i3] = edgePoint.x; 
-            positions[i3 + 1] = edgePoint.y;
-            positions[i3 + 2] = edgePoint.z;
-            
-            // Convert base color to RGB
-            const color = new THREE.Color(baseColor);
-            colors[i3] = color.r;
-            colors[i3 + 1] = color.g;
-            colors[i3 + 2] = color.b;
-            
-            // Random sizes
-            sizes[idx] = 0.05 + Math.random() * 0.15;
-            
-            // Random angles
-            angles[idx] = Math.random() * Math.PI * 2;
-            
-            // Offset for animation timing
-            offsets[idx] = Math.random();
-            
-            // Store edge index for animation
-            edgeIndices[idx] = i;
-        }
-    }
-    
-    // Set attributes
-    particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    particleGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-    particleGeometry.setAttribute('angle', new THREE.BufferAttribute(angles, 1));
-    particleGeometry.setAttribute('offset', new THREE.BufferAttribute(offsets, 1));
-    particleGeometry.setAttribute('edgeIndex', new THREE.BufferAttribute(edgeIndices, 1));
-    
-    // Edge lava shader
-    const particleMaterial = new THREE.ShaderMaterial({
-        uniforms: {
-            time: { value: 0 },
-            baseColor: { value: new THREE.Color(baseColor) },
-            accentColor: { value: new THREE.Color(0xffffff) },
-            audioLow: { value: 0.0 },
-            audioMid: { value: 0.0 },
-            audioHigh: { value: 0.0 },
-            edgeCount: { value: edgeCount }
-        },
-        vertexShader: `
-            uniform float time;
-            uniform float audioLow;
-            uniform float audioMid;
-            uniform float audioHigh;
-            uniform int edgeCount;
-            
-            attribute float size;
-            attribute float angle;
-            attribute float offset;
-            attribute float edgeIndex;
-            attribute vec3 color;
-            
-            varying vec3 vColor;
-            varying float vAlpha;
-            
-            // Noise function for realistic flowing
-            vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-            vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-            vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
-            vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
-            
-            float snoise(vec3 v) {
-                const vec2 C = vec2(1.0/6.0, 1.0/3.0);
-                const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
-                
-                // First corner
-                vec3 i  = floor(v + dot(v, C.yyy));
-                vec3 x0 = v - i + dot(i, C.xxx);
-                
-                // Other corners
-                vec3 g = step(x0.yzx, x0.xyz);
-                vec3 l = 1.0 - g;
-                vec3 i1 = min(g.xyz, l.zxy);
-                vec3 i2 = max(g.xyz, l.zxy);
-                
-                vec3 x1 = x0 - i1 + C.xxx;
-                vec3 x2 = x0 - i2 + C.yyy;
-                vec3 x3 = x0 - D.yyy;
-                
-                // Permutations
-                i = mod289(i);
-                vec4 p = permute(permute(permute(
-                           i.z + vec4(0.0, i1.z, i2.z, 1.0))
-                         + i.y + vec4(0.0, i1.y, i2.y, 1.0))
-                         + i.x + vec4(0.0, i1.x, i2.x, 1.0));
-                
-                // Gradients
-                float n_ = 0.142857142857;
-                vec3 ns = n_ * D.wyz - D.xzx;
-                
-                vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
-                
-                vec4 x_ = floor(j * ns.z);
-                vec4 y_ = floor(j - 7.0 * x_);
-                
-                vec4 x = x_ *ns.x + ns.yyyy;
-                vec4 y = y_ *ns.x + ns.yyyy;
-                vec4 h = 1.0 - abs(x) - abs(y);
-                
-                vec4 b0 = vec4(x.xy, y.xy);
-                vec4 b1 = vec4(x.zw, y.zw);
-                
-                vec4 s0 = floor(b0)*2.0 + 1.0;
-                vec4 s1 = floor(b1)*2.0 + 1.0;
-                vec4 sh = -step(h, vec4(0.0));
-                
-                vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
-                vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
-                
-                vec3 p0 = vec3(a0.xy, h.x);
-                vec3 p1 = vec3(a0.zw, h.y);
-                vec3 p2 = vec3(a1.xy, h.z);
-                vec3 p3 = vec3(a1.zw, h.w);
-                
-                // Normalise gradients
-                vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
-                p0 *= norm.x;
-                p1 *= norm.y;
-                p2 *= norm.z;
-                p3 *= norm.w;
-                
-                // Mix final noise value
-                vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
-                m = m * m;
-                return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
-            }
-            
-            void main() {
-                // Use edge index to maintain coherence along silhouette
-                float edgePos = edgeIndex / float(edgeCount);
-                
-                // Create flowing effect parameters
-                float flowSpeed = 0.8 + audioLow * 1.5;
-                float life = mod(time * flowSpeed + offset, 1.0);
-                
-                // Get the original edge position
-                vec3 pos = position;
-                
-                // Calculate main flow direction - outward from silhouette edge
-                float edgeAngle = edgePos * 3.14159265 * 2.0;
-                vec3 flowDir = vec3(cos(edgeAngle), sin(edgeAngle) * 0.8, sin(edgeAngle) * 0.2);
-                
-                // Add flowing noise
-                float noiseTime = time * 0.5;
-                float noiseX = snoise(vec3(edgePos * 8.0, life * 2.0, noiseTime)) * 0.3;
-                float noiseY = snoise(vec3(edgePos * 8.0 + 100.0, life * 2.0, noiseTime)) * 0.3;
-                float noiseZ = snoise(vec3(edgePos * 8.0 + 200.0, life * 2.0, noiseTime)) * 0.1;
-                
-                // Apply audio reactivity
-                float flowDistance = 1.2 + audioMid * 2.0 + audioLow * 1.0;
-                float flowTurbulence = 0.3 + audioHigh * 0.8;
-                
-                // Final position calculation
-                pos += flowDir * life * flowDistance;
-                pos.x += noiseX * flowTurbulence * (1.0 + audioMid * 2.0);
-                pos.y += life * 1.2 + noiseY * flowTurbulence * (1.0 + audioLow * 2.0); // More upward flow
-                pos.z += noiseZ * flowTurbulence * (1.0 + audioHigh * 1.0);
-                
-                // Alpha based on life cycle
-                vAlpha = smoothstep(0.0, 0.2, life) * (1.0 - smoothstep(0.5, 1.0, life));
-                
-                // Color calculation
-                float hueShift = audioHigh * 0.2 + audioMid * 0.1;
-                vColor = color;
-                if (hueShift > 0.0) {
-                    // Simple hue shift approximation
-                    float angle = hueShift * 3.14159265 * 2.0;
-                    float s = sin(angle);
-                    float c = cos(angle);
-                    vec3 weights = vec3(0.3333, 0.3333, 0.3333);
-                    float A = weights.x + weights.y + weights.z;
-                    mat3 rotMat = mat3(
-                        weights.x + c * (1.0 - weights.x) + s * 0.0,
-                        weights.x + c * (0.0 - weights.x) + s * -weights.z,
-                        weights.x + c * (0.0 - weights.x) + s * weights.y,
-                        weights.y + c * (0.0 - weights.y) + s * weights.z,
-                        weights.y + c * (1.0 - weights.y) + s * 0.0,
-                        weights.y + c * (0.0 - weights.y) + s * -weights.x,
-                        weights.z + c * (0.0 - weights.z) + s * -weights.y,
-                        weights.z + c * (0.0 - weights.z) + s * weights.x,
-                        weights.z + c * (1.0 - weights.z) + s * 0.0
-                    );
-                    vColor = rotMat * color;
-                }
-                
-                // Size calculation - particles grow then shrink with audio reactivity
-                float sizeFactor = size * (1.0 + audioMid * 2.0 + audioLow * 1.0);
-                float sizeMultiplier = sizeFactor * (1.0 - abs(life * 2.0 - 1.0) * 0.8);
-                
-                // Final position
-                vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-                gl_PointSize = sizeMultiplier * 40.0 / -mvPosition.z;
-                gl_Position = projectionMatrix * mvPosition;
-            }
-        `,
-        fragmentShader: `
-            uniform vec3 baseColor;
-            uniform vec3 accentColor;
-            uniform float audioLow;
-            uniform float audioMid;
-            uniform float audioHigh;
-            
-            varying vec3 vColor;
-            varying float vAlpha;
-            
-            void main() {
-                // Create circular particle with soft edge
-                vec2 uv = gl_PointCoord.xy - 0.5;
-                float dist = length(uv);
-                
-                if (dist > 0.5) discard;
-                
-                // Soft edge
-                float edge = smoothstep(0.5, 0.4, dist);
-                
-                // Add inner glow based on distance from center
-                float glow = pow(1.0 - dist * 2.0, 2.0);
-                
-                // Audio-reactive glow
-                float audioGlow = audioLow * 0.5 + audioMid * 0.3 + audioHigh * 0.2;
-                
-                // Mix colors based on audio
-                vec3 innerColor = mix(vColor, accentColor, glow * (0.7 + audioGlow));
-                
-                // More intense core based on audio
-                innerColor += vec3(1.0, 1.0, 1.0) * pow(glow, 5.0) * (1.0 + audioHigh * 3.0);
-                
-                // Final alpha
-                float alpha = edge * vAlpha * (0.8 + audioGlow * 0.5);
-                
-                gl_FragColor = vec4(innerColor, alpha);
-            }
-        `,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        transparent: true,
-        vertexColors: true
-    });
-    
-    const particles = new THREE.Points(particleGeometry, particleMaterial);
-    effectGroup.add(particles);
-    
-    return {
-        effectGroup,
-        particles,
-        baseColor
-    };
-};
-
-// Initialize lava effects for all musicians
-const lavaEffects = [];
-
-function initializeLavaEffects() {
-    // Clear any existing effects first
-    for (const effect of lavaEffects) {
-        if (effect.effectGroup) scene.remove(effect.effectGroup);
-    }
-    lavaEffects.length = 0;
-    
-    // Create unique colors for each musician type
-    const colorMap = {
-        'guitarist': 0xff3300,    // Orange-red
-        'bassist': 0x0099ff,      // Blue
-        'singer': 0xffff00,       // Yellow
-        'backup': 0xff00ff,       // Magenta
-        'drummer': 0x00ff66       // Green
-    };
-    
-    // Add lava effect to each musician
-    for (const musician of musicians) {
-        const baseColor = colorMap[musician.type];
-        const effect = createMusicianLavaEffect(musician.mesh, baseColor);
-        lavaEffects.push(effect);
-    }
-}
-
 // Audio setup
 const audioElement = document.getElementById('music');
-let analyser, dataArray;
+let audioAnalyzer;
 
 function setupAudio() {
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const source = audioContext.createMediaElementSource(audioElement);
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = 1024; // Higher resolution for better frequency data
+    audioAnalyzer = new AudioAnalyzer(audioElement);
+    audioAnalyzer.init();
+}
+
+// Create color palettes for each musician
+const musicianColors = {
+    guitarist: 0xff9900,    // Orange
+    bassist: 0x0099ff,      // Blue
+    singer: 0xffffff,       // White
+    drummer: 0x9900ff,      // Purple
+    backupSinger1: 0xff6699, // Pink
+    backupSinger2: 0x66ff99  // Mint green
+};
+
+// Musician effects - will be populated once musicians are created
+let musicianEffects = [];
+
+// After creating musicians, initialize their effects
+function initMusicianEffects() {
+    // Clear existing effects if any
+    musicianEffects.forEach(effect => effect.dispose());
+    musicianEffects = [];
     
-    source.connect(analyser);
-    analyser.connect(audioContext.destination);
+    // Create new effects for each musician
+    if (guitarist) {
+        musicianEffects.push(new MusicianEffect(guitarist, musicianColors.guitarist, audioAnalyzer));
+    }
     
-    const bufferLength = analyser.frequencyBinCount;
-    dataArray = new Uint8Array(bufferLength);
+    if (bassist) {
+        musicianEffects.push(new MusicianEffect(bassist, musicianColors.bassist, audioAnalyzer));
+    }
+    
+    if (singer) {
+        musicianEffects.push(new MusicianEffect(singer, musicianColors.singer, audioAnalyzer));
+    }
+    
+    if (drummer && drummerEntered) {
+        musicianEffects.push(new MusicianEffect(drummer, musicianColors.drummer, audioAnalyzer));
+    }
+    
+    if (backupSinger1 && singerEntered) {
+        musicianEffects.push(new MusicianEffect(backupSinger1, musicianColors.backupSinger1, audioAnalyzer));
+    }
+    
+    if (backupSinger2 && singerEntered) {
+        musicianEffects.push(new MusicianEffect(backupSinger2, musicianColors.backupSinger2, audioAnalyzer));
+    }
 }
 
 // Animation variables
@@ -661,7 +337,25 @@ function animateMusiciansFirstSegment(time, bassAvg, midAvg) {
         // Bassist movement timed with bass notes
         bassist.position.y = musicianBaseY + Math.sin(time * 3) * 0.12 * bassAvg;
         bassist.rotation.x = Math.sin(time * 2.5) * 0.08 * bassAvg;
+        
+        // Move camera to focus on guitarist and bassist
+        if (currentPlayTime < 10) {
+            camera.position.lerp(new THREE.Vector3(0, 2, 6), 0.01);
+            camera.lookAt(0, 1, 0);
+        } else if (currentPlayTime < 20) {
+            camera.position.lerp(new THREE.Vector3(3, 2, 4), 0.01);
+            camera.lookAt(guitarist.position);
+        } else {
+            camera.position.lerp(new THREE.Vector3(-3, 2, 4), 0.01);
+            camera.lookAt(bassist.position);
+        }
     } else {
+        // Return to default camera position after 25 seconds
+        if (currentPlayTime < 27) {
+            camera.position.lerp(new THREE.Vector3(0, 1.5, 5), 0.01);
+            camera.lookAt(0, 1, 0);
+        }
+        
         // Regular musician animations after 25 seconds
         guitarist.position.y = musicianBaseY + Math.sin(time * 2) * 0.1 * midAvg;
         bassist.position.y = musicianBaseY + Math.sin(time * 4) * 0.1 * bassAvg;
@@ -749,29 +443,22 @@ function animateLights(delta) {
     });
     
     // Pulse main lights with bass
-    if (dataArray && isPlaying) {
-        analyser.getByteFrequencyData(dataArray);
+    if (audioAnalyzer && isPlaying) {
+        const audioData = audioAnalyzer.update();
         
-        // Get average of bass frequencies (0-100Hz)
+        // Get average of bass frequencies
         let bassSum = 0;
         for (let i = 0; i < 10; i++) {
-            bassSum += dataArray[i];
+            bassSum += audioData.frequencyBinCount[i];
         }
         const bassAvg = bassSum / 10 / 255;
         
-        // Get average of mid frequencies (100-2000Hz)
+        // Get average of mid frequencies
         let midSum = 0;
         for (let i = 10; i < 100; i++) {
-            midSum += dataArray[i];
+            midSum += audioData.frequencyBinCount[i];
         }
         const midAvg = midSum / 90 / 255;
-        
-        // Get average of high frequencies (2000Hz+)
-        let highSum = 0;
-        for (let i = 100; i < 200; i++) {
-            highSum += dataArray[i];
-        }
-        const highAvg = highSum / 100 / 255;
         
         // Adjust spotlight intensities based on music and current focus
         spotLights[0].intensity = 2 + bassAvg * 5;
@@ -855,84 +542,17 @@ function animateLights(delta) {
     }
 }
 
-// Update lava effects with audio data
-function updateLavaEffects() {
-    if (!dataArray || !isPlaying) return;
+// Update shaders with audio data
+function updateShaderEffects(time) {
+    if (!audioAnalyzer || !isPlaying) return;
     
-    // Get audio frequency data
-    analyser.getByteFrequencyData(dataArray);
+    // Get audio analysis data
+    const audioData = audioAnalyzer.update();
     
-    // Process frequency bands
-    const bassAvg = getAverageFrequencyInRange(0, 10) / 255;
-    const lowMidAvg = getAverageFrequencyInRange(10, 40) / 255;
-    const midAvg = getAverageFrequencyInRange(40, 80) / 255;
-    const highMidAvg = getAverageFrequencyInRange(80, 120) / 255;
-    const highAvg = getAverageFrequencyInRange(120, 200) / 255;
-    
-    // Update each musician's lava effect
-    for (let i = 0; i < lavaEffects.length; i++) {
-        const effect = lavaEffects[i];
-        const musician = musicians[i];
-        
-        if (!effect || !musician) continue;
-        
-        // Only show effects for musicians that are on stage
-        const isOnStage = Math.abs(musician.mesh.position.x) < 10;
-        if (!isOnStage) {
-            effect.effectGroup.visible = false;
-            continue;
-        }
-        
-        effect.effectGroup.visible = true;
-        
-        // Update effect group position to follow musician
-        effect.effectGroup.position.copy(musician.mesh.position);
-        
-        // Determine audio intensity based on musician type
-        let audioLowValue = 0;
-        let audioMidValue = 0;
-        let audioHighValue = 0;
-        
-        if (musician.type === 'guitarist') {
-            audioLowValue = lowMidAvg;
-            audioMidValue = midAvg * 1.5;
-            audioHighValue = highMidAvg;
-        } else if (musician.type === 'bassist') {
-            audioLowValue = bassAvg * 1.8;
-            audioMidValue = lowMidAvg;
-            audioHighValue = midAvg * 0.5;
-        } else if (musician.type === 'drummer') {
-            audioLowValue = bassAvg * 1.5;
-            audioMidValue = lowMidAvg;
-            audioHighValue = highAvg * 0.7;
-        } else if (musician.type === 'singer') {
-            audioLowValue = lowMidAvg * 0.7;
-            audioMidValue = midAvg;
-            audioHighValue = highAvg * 1.5;
-        } else {
-            // Backup singers
-            audioLowValue = lowMidAvg * 0.6;
-            audioMidValue = midAvg * 0.8;
-            audioHighValue = highAvg;
-        }
-        
-        // Update shader uniforms
-        if (effect.particles) {
-            effect.particles.material.uniforms.time.value = time;
-            effect.particles.material.uniforms.audioLow.value = audioLowValue;
-            effect.particles.material.uniforms.audioMid.value = audioMidValue;
-            effect.particles.material.uniforms.audioHigh.value = audioHighValue;
-        }
-    }
-}
-
-// Helper function to get average frequency in a range
-function getAverageFrequencyInRange(start, end) {
-    let sum = 0;
-    for (let i = start; i < end; i++) {
-        sum += dataArray[i];
-    }
-    return sum / (end - start);
+    // Update each musician effect
+    musicianEffects.forEach(effect => {
+        effect.update(time, audioData);
+    });
 }
 
 // Animation loop
@@ -942,6 +562,7 @@ function animate() {
     requestAnimationFrame(animate);
     
     const delta = clock.getDelta();
+    time += delta;
     
     // Update controls - disable controls when music is playing for choreographed camera moves
     if (!isPlaying) {
@@ -960,8 +581,8 @@ function animate() {
     // Animate scene elements
     animateLights(delta);
     
-    // Update lava effects with audio data
-    updateLavaEffects();
+    // Update shader effects
+    updateShaderEffects(time);
     
     // Render scene
     renderer.render(scene, camera);
@@ -977,8 +598,10 @@ window.addEventListener('resize', () => {
 // Play button event
 document.getElementById('playBtn').addEventListener('click', () => {
     if (!isPlaying) {
-        if (!analyser) {
+        if (!audioAnalyzer) {
             setupAudio();
+            // Initialize musician effects when play is first clicked
+            initMusicianEffects();
         }
         audioElement.play();
         isPlaying = true;
@@ -986,11 +609,6 @@ document.getElementById('playBtn').addEventListener('click', () => {
         
         // Disable orbit controls when playing for choreographed camera moves
         controls.enabled = false;
-        
-        // Initialize lava effects when play starts
-        if (lavaEffects.length === 0) {
-            initializeLavaEffects();
-        }
     } else {
         audioElement.pause();
         isPlaying = false;
