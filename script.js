@@ -279,8 +279,8 @@ let drummerEntered = false;
 function animateBandEntrances() {
     currentPlayTime = audioElement.currentTime;
     
-    // Lead singer and backup singers enter at 30 seconds
-    if (currentPlayTime >= 30 && !singerEntered) {
+    // Lead singer and backup singers enter at 25 seconds (5 seconds earlier)
+    if (currentPlayTime >= 25 && !singerEntered) {
         singerEntered = true;
         
         // Animate singer coming in from off-stage
@@ -319,10 +319,10 @@ function animateBandEntrances() {
     }
 }
 
-// Specialized animation function for guitarist and bassist in first 30 seconds
+// Specialized animation function for guitarist and bassist in first 25 seconds
 function animateMusiciansFirstSegment(time, bassAvg, midAvg) {
-    // More energetic movements for guitarist and bassist in the first 30 seconds
-    if (currentPlayTime < 30) {
+    // More energetic movements for guitarist and bassist in the first 25 seconds
+    if (currentPlayTime < 25) {
         // Guitarist energetic playing
         guitarist.position.y = 0.85 + Math.sin(time * 5) * 0.15 * midAvg;
         guitarist.rotation.x = Math.sin(time * 4) * 0.1 * midAvg;
@@ -345,13 +345,13 @@ function animateMusiciansFirstSegment(time, bassAvg, midAvg) {
             camera.lookAt(bassist.position);
         }
     } else {
-        // Return to default camera position after 30 seconds
-        if (currentPlayTime < 32) {
+        // Return to default camera position after 25 seconds
+        if (currentPlayTime < 27) {
             camera.position.lerp(new THREE.Vector3(0, 1.5, 5), 0.01);
             camera.lookAt(0, 1, 0);
         }
         
-        // Regular musician animations after 30 seconds
+        // Regular musician animations after 25 seconds
         guitarist.position.y = 0.85 + Math.sin(time * 2) * 0.1 * midAvg;
         bassist.position.y = 0.85 + Math.sin(time * 4) * 0.1 * bassAvg;
     }
