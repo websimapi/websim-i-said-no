@@ -104,7 +104,7 @@ const riserMaterial = new THREE.MeshBasicMaterial({
     side: THREE.DoubleSide
 });
 const drumRiser = new THREE.Mesh(riserPlane, riserMaterial);
-drumRiser.position.set(-2, 0.4, -2); // Position for the riser
+drumRiser.position.set(-2, 0.25, -2); // Lower position to align with stage
 drumRiser.rotation.x = -Math.PI / 2; // Rotate to lie flat
 scene.add(drumRiser);
 
@@ -193,7 +193,7 @@ const guitarist = createMusicianPlane('/guitarist.png', [2, 0, -1], true);
 const bassist = createMusicianPlane('/bassist.png', [-2, 0, 0], true);
 
 // Drummer - starts off-stage and will be positioned on the riser
-const drummer = createMusicianPlane('/drummer.png', [-15, 0.8, -2], false); // Increased Y position by 0.8 for the riser height
+const drummer = createMusicianPlane('/drummer.png', [-15, 0, -2], false);
 
 // Audio setup
 const audioElement = document.getElementById('music');
@@ -331,7 +331,7 @@ function animateBandEntrances() {
         
         // Animate drummer coming in - maintain the elevated Y position
         new TWEEN.Tween(drummer.position)
-            .to({ x: -2 }, 1500) 
+            .to({ x: -2, y: MUSICIAN_PLANE_HEIGHT / 2 + 0.8 }, 1500) // Add Y position to properly place on riser 
             .easing(TWEEN.Easing.Quadratic.Out)
             .start();
     }
