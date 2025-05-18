@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-// Define the shader for the musician glow effect - enhanced lava movement version with extended boundary effect
+// Keep original shader for musician silhouettes
 const musicianVertexShader = `
     varying vec2 vUv;
     void main() {
@@ -45,14 +45,14 @@ const musicianFragmentShader = `
         return 0.5 + 0.5 * n;
     }
     
-    // Enhanced FBM with dynamic octaves based on music intensity
+    // Simple FBM with limited octaves for performance
     float fbm(vec2 p, float musicPower) {
         float value = 0.0;
         float amplitude = 0.5;
         float frequency = 1.0;
         
-        // Dynamic octaves - more detail when music is intense
-        int octaves = 2 + int(musicPower * 2.0);
+        // Limit octaves for performance
+        int octaves = 2 + int(min(musicPower * 2.0, 2.0));
         
         for (int i = 0; i < 4; i++) {
             if (i >= octaves) break;
@@ -63,38 +63,29 @@ const musicianFragmentShader = `
         return value;
     }
     
-    // Enhanced lava blob effect with more fluid movement
     float lavaBlobEffect(vec2 uv, float t, float bassInt, float midInt, float trebleInt) {
-        // More complex layered movement
         vec2 p = uv;
-        
-        // First layer - bass-driven slow flow
         float flow1 = t * (0.1 + bassInt * 0.2);
         p.y -= flow1;
         
-        // Second layer - mid-driven circular motion
         float flow2 = midInt * 0.3;
         p += vec2(
             sin(t * 0.3) * flow2,
             cos(t * 0.27) * flow2
         );
         
-        // Third layer - high-frequency treble-driven turbulence
         float turbulence = trebleInt * 0.15;
         p += vec2(
             sin(t * 1.7 + uv.y * 5.0) * turbulence,
             cos(t * 1.5 + uv.x * 4.0) * turbulence
         );
         
-        // Calculate dynamic distortion with music-reactive complexity
         float musicPower = bassInt * 0.6 + midInt * 0.3 + trebleInt * 0.1;
         float distortion = fbm(p * (2.0 + musicPower), musicPower);
         
-        // Add pulsing based on beat detection
         float pulseFactor = 0.5 + sin(t * 6.0 * (0.8 + bassInt * 1.2)) * 0.2 * bassInt;
         distortion *= pulseFactor;
         
-        // Add swirl patterns for more fluid motion
         float swirlIntensity = midInt * 0.4;
         float swirl = sin(distortion * 6.28 + t) * swirlIntensity;
         distortion += swirl;
@@ -102,28 +93,23 @@ const musicianFragmentShader = `
         return distortion * (0.8 + musicPower * 1.2);
     }
     
-    // Generate dynamic color variations
     vec3 generateLavaColors(vec3 baseColor, float distortion, float t, float bassInt, float midInt, float trebleInt) {
         float musicPower = bassInt * 0.7 + midInt * 0.2 + trebleInt * 0.1;
         
-        // Create color shifts that flow with the lava
         vec3 colorVariation = vec3(
             sin(distortion * 3.0 + t * 0.7) * 0.4, 
             sin(distortion * 2.5 + t * 0.5) * 0.4, 
             sin(distortion * 2.0 + t * 0.3) * 0.4
         );
         
-        // Add subtle pulse based on bass for more rhythm-driven colors
         float pulsatingFactor = 1.0 + sin(t * 4.0) * 0.2 * bassInt;
         
-        // Generate final color with greater variation
         vec3 finalColor = mix(
             baseColor,
             baseColor + colorVariation,
             musicPower * pulsatingFactor
         );
         
-        // Add brightness variations based on treble
         finalColor *= (1.0 + trebleInt * 0.3);
         
         return finalColor;
@@ -133,119 +119,84 @@ const musicianFragmentShader = `
         // Sample original texture
         vec4 texColor = texture2D(map, vUv);
         
-        // Get music intensity values with more dynamic blending
         float musicPower = bassIntensity * 0.7 + midIntensity * 0.4 + trebleIntensity * 0.2;
+        float expandedRange = glowRange * (1.0 + musicPower * 6.0);
         
-        // Enhanced dynamic range - make it much larger to escape boundaries
-        float expandedRange = glowRange * (1.0 + musicPower * 10.0);
-        
-        // Create enhanced lava lamp blob effect with all music components
         vec2 scaledUV = vUv * vec2(1.0, 1.5);
         float lavaDistortion = lavaBlobEffect(scaledUV, time, bassIntensity, midIntensity, trebleIntensity);
         
-        // Generate more dynamic flowing colors
         vec3 finalGlowColor = generateLavaColors(glowColor, lavaDistortion, time, bassIntensity, midIntensity, trebleIntensity);
         
         // Detect semi-transparent pixels (outlines)
         bool isEdge = texColor.a > 0.01 && texColor.a < 0.99;
         
         if (isEdge) {
-            // Create more vibrant, pulsating edge effect
             float edgePulse = 0.7 + sin(time * 5.0 + lavaDistortion * 10.0) * 0.3 * musicPower;
             texColor.rgb = mix(texColor.rgb, finalGlowColor * 1.8, edgePulse);
             texColor.a = min(texColor.a + 0.1 + bassIntensity * 0.1, 0.95);
         }
         
-        // --- EXTENDED BOUNDARY LAVA EFFECT ---
-        // Calculate extended lava effect beyond the original texture boundaries
-        float totalLavaEffect = 0.0;
-        vec2 pixelSize = vec2(1.0) / vec2(textureSize(map, 0));
-        
-        // Increased expanded range to allow effects to escape further
-        float extendedRange = expandedRange * 2.5; // Much larger sampling area
-        float depth = 1.0 + musicPower * 5.0; // Deeper 3D effect
-        float verticalBias = 1.5 + bassIntensity * 3.0; // Stronger upward flow
-        
-        // More expansive sampling pattern with better optimization
-        const int numSamples = 12;
-        vec2 offsets[12];
-        
-        // Create a pattern that extends further outward
-        for (int i = 0; i < numSamples; i++) {
-            float angle = float(i) / float(numSamples) * 6.28;
+        if (texColor.a < 0.99) {
+            float totalLavaEffect = 0.0;
+            vec2 pixelSize = vec2(1.0) / vec2(textureSize(map, 0));
             
-            // Scale increases with sample index to create wider sampling
-            float scale = float(i) / float(numSamples) * 0.5 + 0.5;
-            float radius = extendedRange * scale;
+            float depth = 1.0 + musicPower * 3.0;
+            float verticalBias = 1.5 + bassIntensity * 2.0;
             
-            // Add dynamic pulsing to sample positions - stronger with music
-            radius *= 1.0 + sin(time * 3.0 + float(i) * 0.5) * 0.5 * musicPower;
+            const int numSamples = 8; // Reduced for performance
+            vec2 offsets[8];
             
-            // Create flowing spiral pattern - stronger with bass for rhythmic effect
-            float spiralFactor = 0.3 + bassIntensity * 0.6;
-            angle += time * (0.2 + float(i) * 0.05) * spiralFactor;
-            
-            // Calculate final offset with stronger vertical bias for upward flow
-            offsets[i] = vec2(
-                cos(angle) * radius,
-                sin(angle) * radius * (1.0 + verticalBias * 0.5)
-            );
-        }
-        
-        // For checking if we found any edge pixels
-        bool foundEdge = false;
-        
-        // Sample in a wide area to detect edges and create extended lava effect
-        for (int i = 0; i < numSamples; i++) {
-            vec2 offset = offsets[i];
-            
-            // Make offset magnitude pulsate with music for 3D rhythmic pulsing
-            float pulseFactor = 1.0 + sin(time * 4.0 + float(i) * 0.7) * 0.7 * musicPower;
-            offset *= pulseFactor;
-            
-            // Sample with 3D projection effect
-            vec2 sampleUV = vUv + offset * pixelSize * depth;
-            
-            // Add enhanced lava displacement that flows more naturally
-            float bubbleEffect = lavaBlobEffect(sampleUV, time * (0.7 + float(i) * 0.05), 
-                                               bassIntensity, midIntensity, trebleIntensity);
-            
-            // Create more complex flowing movement
-            sampleUV += vec2(
-                sin(bubbleEffect * 6.28 + time * (1.0 + float(i) * 0.1)) * 0.035 * musicPower,
-                (cos(bubbleEffect * 3.14 + time * 0.7) * 0.02 + 0.03) * musicPower // Stronger varied flow
-            ) * extendedRange;
-            
-            // Sample texture at the offset position
-            vec4 sampleColor = texture2D(map, sampleUV);
-            
-            // If we hit an edge or solid area
-            if(sampleColor.a > 0.01) {
-                foundEdge = true;
+            for (int i = 0; i < numSamples; i++) {
+                float angle = float(i) / float(numSamples) * 6.28;
+                float radius = expandedRange * (0.5 + 0.5 * sin(angle * 2.0));
                 
-                // Calculate 3D-like effect with dynamic vertical bias
-                float distanceFactor = length(offset) / extendedRange;
-                // Let effect extend much further beyond the boundary
-                float falloff = smoothstep(1.2, 0.0, distanceFactor); 
+                radius *= 1.0 + sin(time * 3.0 + float(i) * 0.5) * 0.3 * musicPower;
                 
-                // Create pulsating vertical bias for enhanced lava lamp effect
-                float upwardBias = 1.5 + sin(time * 2.0 + bubbleEffect * 5.0) * 0.8 * bassIntensity;
-                float upwardFlow = smoothstep(-0.2, 1.0, (offset.y * upwardBias + extendedRange) / (extendedRange * 2.0));
-                upwardFlow = pow(upwardFlow, 0.5); // Smoother falloff
+                float spiralFactor = 0.2 + bassIntensity * 0.4;
+                angle += time * (0.2 + float(i) * 0.05) * spiralFactor;
                 
-                // 3D blob shape with music-driven shape changes
-                float wobble = sin(time * 3.0 + float(i)) * midIntensity * 0.5;
-                float blobShape = sin(bubbleEffect * 6.28 + wobble) * 0.5 + 0.5;
-                blobShape *= bubbleEffect * falloff * upwardFlow * (1.0 + bassIntensity * 1.0);
-                
-                // Add bubble's contribution with enhanced 3D depth feeling
-                totalLavaEffect += falloff * blobShape * (1.0 + musicPower * 3.0);
+                offsets[i] = vec2(
+                    cos(angle) * radius,
+                    sin(angle) * radius * (1.0 + verticalBias * 0.3)
+                );
             }
-        }
-        
-        // Create extended effect that flows beyond boundaries
-        if (foundEdge || totalLavaEffect > 0.01) {
-            // Create more dynamic flowing color variation
+            
+            for (int i = 0; i < numSamples; i++) {
+                vec2 offset = offsets[i];
+                
+                float pulseFactor = 1.0 + sin(time * 4.0 + float(i) * 0.7) * 0.5 * musicPower;
+                offset *= pulseFactor;
+                
+                vec2 sampleUV = vUv + offset * pixelSize * depth;
+                
+                float bubbleEffect = lavaBlobEffect(sampleUV, time * (0.7 + float(i) * 0.05), 
+                                                   bassIntensity, midIntensity, trebleIntensity);
+                
+                sampleUV += vec2(
+                    sin(bubbleEffect * 6.28 + time * (1.0 + float(i) * 0.1)) * 0.025 * musicPower,
+                    (cos(bubbleEffect * 3.14 + time * 0.7) * 0.01 + 0.02) * musicPower
+                ) * expandedRange;
+                
+                vec4 sampleColor = texture2D(map, sampleUV);
+                
+                if(sampleColor.a > 0.01 && sampleColor.a < 0.99) {
+                    float distanceFactor = length(offset) / expandedRange;
+                    float falloff = smoothstep(1.0, 0.0, distanceFactor);
+                    
+                    float upwardBias = 1.0 + sin(time * 2.0 + bubbleEffect * 5.0) * 0.5 * bassIntensity;
+                    float upwardFlow = smoothstep(0.0, 1.0, (offset.y * upwardBias + expandedRange) / (expandedRange * 2.0));
+                    upwardFlow = pow(upwardFlow, 0.6);
+                    
+                    float wobble = sin(time * 3.0 + float(i)) * midIntensity * 0.5;
+                    float blobShape = sin(bubbleEffect * 6.28 + wobble) * 0.5 + 0.5;
+                    blobShape *= bubbleEffect * falloff * upwardFlow * (1.0 + bassIntensity * 0.5);
+                    
+                    totalLavaEffect += falloff * blobShape * (0.8 + musicPower * 1.2);
+                }
+            }
+            
+            totalLavaEffect = min(totalLavaEffect * (1.0 + musicPower * 2.5), 1.0);
+            
             float colorShift = lavaDistortion * 4.0 + vUv.y * 5.0 - time * 0.7;
             vec3 lavaColor = finalGlowColor + vec3(
                 sin(colorShift) * 0.4, 
@@ -253,32 +204,55 @@ const musicianFragmentShader = `
                 sin(colorShift + 4.2) * 0.4
             ) * musicPower;
             
-            // Add pulsing brightness based on beat detection
-            float brightnessPulse = 1.0 + sin(time * 5.0 * (0.8 + bassIntensity)) * 0.5 * bassIntensity;
+            float brightnessPulse = 1.0 + sin(time * 5.0 * (0.8 + bassIntensity)) * 0.4 * bassIntensity;
             lavaColor *= brightnessPulse;
             
-            // Extended effect beyond the image boundaries
-            if (texColor.a < 0.1) {
-                // Beyond the original texture - create fully escaped lava effect
-                float escapedLavaOpacity = totalLavaEffect * (0.8 + musicPower * 0.9);
+            if (texColor.a < 0.95) {
+                vec3 lavaColorWithIntensity = lavaColor * (totalLavaEffect * 2.0);
                 
-                if (escapedLavaOpacity > 0.01) {
-                    texColor.rgb = lavaColor * (1.2 + trebleIntensity * 0.8);
-                    texColor.a = escapedLavaOpacity; // Allow the lava to be visible outside the original image
+                if (isEdge) {
+                    float edgeMix = 0.7 + sin(time * 4.0) * 0.2 * bassIntensity;
+                    texColor.rgb = mix(texColor.rgb, lavaColorWithIntensity, edgeMix);
+                    texColor.a = min(texColor.a + totalLavaEffect * 0.6, 0.95);
+                } else if (totalLavaEffect > 0.05) {
+                    texColor.rgb = lavaColorWithIntensity * (1.0 + trebleIntensity * 0.5);
+                    texColor.a = totalLavaEffect * (0.9 + bassIntensity * 0.2);
                 }
-            } else if (isEdge) {
-                // Enhanced edge transition with stronger music-responsive pulsing
-                float edgeMix = 0.7 + sin(time * 4.0) * 0.3 * bassIntensity;
-                texColor.rgb = mix(texColor.rgb, lavaColor * 2.0, edgeMix);
-                texColor.a = min(texColor.a + totalLavaEffect * 0.8, 0.95);
-            } else if (texColor.a < 0.95) {
-                // Semi-transparent areas - enhance with lava effect
-                texColor.rgb = mix(texColor.rgb, lavaColor * 1.5, min(totalLavaEffect * 1.5, 0.9));
-                texColor.a = min(texColor.a + totalLavaEffect * 0.5, 0.95);
             }
         }
         
         gl_FragColor = texColor;
+    }
+`;
+
+// NEW: Add a volumetric particle shader for the floating fog effect
+const particleVertexShader = `
+    attribute float size;
+    attribute vec3 customColor;
+    attribute float life;
+    
+    varying vec3 vColor;
+    varying float vLife;
+    
+    void main() {
+        vColor = customColor;
+        vLife = life;
+        
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = size * (300.0 / -mvPosition.z);
+        gl_Position = projectionMatrix * mvPosition;
+    }
+`;
+
+const particleFragmentShader = `
+    uniform sampler2D pointTexture;
+    
+    varying vec3 vColor;
+    varying float vLife;
+    
+    void main() {
+        float alpha = texture2D(pointTexture, gl_PointCoord).a * vLife;
+        gl_FragColor = vec4(vColor, alpha);
     }
 `;
 
@@ -389,7 +363,203 @@ scene.add(backWall);
 const MUSICIAN_PLANE_WIDTH = 1.8;
 const MUSICIAN_PLANE_HEIGHT = 3;
 
-// Create musician with shader
+// Create particle system for volumetric fog effect
+function createMusicianParticleSystem(musician, color) {
+    const particleCount = 500;
+    const particles = new THREE.BufferGeometry();
+    
+    const positions = new Float32Array(particleCount * 3);
+    const colors = new Float32Array(particleCount * 3);
+    const sizes = new Float32Array(particleCount);
+    const lives = new Float32Array(particleCount);
+    
+    const colorObj = new THREE.Color(color);
+    
+    // Create starting particle cloud around the musician
+    for (let i = 0; i < particleCount; i++) {
+        const i3 = i * 3;
+        
+        // Position particles around the musician with slight randomness
+        positions[i3] = (Math.random() - 0.5) * MUSICIAN_PLANE_WIDTH * 1.5;
+        positions[i3 + 1] = (Math.random()) * MUSICIAN_PLANE_HEIGHT * 1.2;
+        positions[i3 + 2] = (Math.random() - 0.5) * 0.5; // Very slight z variation
+        
+        // Add color with slight variation
+        colors[i3] = colorObj.r * (0.8 + Math.random() * 0.4);
+        colors[i3 + 1] = colorObj.g * (0.8 + Math.random() * 0.4);
+        colors[i3 + 2] = colorObj.b * (0.8 + Math.random() * 0.4);
+        
+        // Randomize size
+        sizes[i] = 5 + Math.random() * 15; 
+        
+        // Lifecycle value
+        lives[i] = Math.random();
+    }
+    
+    particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    particles.setAttribute('customColor', new THREE.BufferAttribute(colors, 3));
+    particles.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+    particles.setAttribute('life', new THREE.BufferAttribute(lives, 1));
+    
+    // Load particle texture
+    const particleTexture = new THREE.TextureLoader().load('/particle.png');
+    
+    // Create material
+    const particleMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            pointTexture: { value: particleTexture },
+            time: { value: 0.0 }
+        },
+        vertexShader: particleVertexShader,
+        fragmentShader: particleFragmentShader,
+        blending: THREE.AdditiveBlending,
+        depthTest: false,
+        transparent: true
+    });
+    
+    // Create the particle system
+    const particleSystem = new THREE.Points(particles, particleMaterial);
+    particleSystem.frustumCulled = false; // Prevent disappearing when out of camera frustum
+    
+    // Attach to musician for easy tracking
+    musician.userData.particleSystem = particleSystem;
+    
+    // Position at the musician
+    particleSystem.position.copy(musician.position);
+    
+    scene.add(particleSystem);
+    return particleSystem;
+}
+
+// Create fog volume with instanced meshes for better performance
+function createFogVolume(musician, color) {
+    const planeCount = 10;
+    const fogWidth = MUSICIAN_PLANE_WIDTH * 3;
+    const fogHeight = MUSICIAN_PLANE_HEIGHT * 3;
+    
+    const fogColor = new THREE.Color(color);
+    
+    const fogGeometry = new THREE.PlaneGeometry(fogWidth, fogHeight);
+    const fogMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            time: { value: 0.0 },
+            baseColor: { value: fogColor },
+            bassIntensity: { value: 0.0 },
+            midIntensity: { value: 0.0 },
+            trebleIntensity: { value: 0.0 }
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform float time;
+            uniform vec3 baseColor;
+            uniform float bassIntensity;
+            uniform float midIntensity;
+            uniform float trebleIntensity;
+            
+            varying vec2 vUv;
+            
+            float noise(vec2 p) {
+                return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+            }
+            
+            float smoothNoise(vec2 p) {
+                vec2 ip = floor(p);
+                vec2 fp = fract(p);
+                fp = fp*fp*(3.0-2.0*fp);
+                
+                float n00 = noise(ip);
+                float n01 = noise(ip + vec2(0, 1));
+                float n10 = noise(ip + vec2(1, 0));
+                float n11 = noise(ip + vec2(1, 1));
+                
+                float n0 = mix(n00, n01, fp.y);
+                float n1 = mix(n10, n11, fp.y);
+                return mix(n0, n1, fp.x);
+            }
+            
+            float fbm(vec2 p) {
+                float f = 0.0;
+                f += 0.5 * smoothNoise(p * 1.0);
+                f += 0.25 * smoothNoise(p * 2.0);
+                f += 0.125 * smoothNoise(p * 4.0);
+                f += 0.0625 * smoothNoise(p * 8.0);
+                return f;
+            }
+            
+            void main() {
+                // Calculate distance from center
+                vec2 center = vec2(0.5, 0.5);
+                float dist = distance(vUv, center);
+                
+                // Music-reactive time offsets
+                float timeOffset = time * (0.1 + bassIntensity * 0.2);
+                
+                // Generate swirling fog pattern
+                vec2 swirl = vec2(
+                    sin(timeOffset + vUv.x * 3.0) * 0.2,
+                    cos(timeOffset + vUv.y * 2.0) * 0.2
+                ) * (bassIntensity * 0.5 + 0.5);
+                
+                float noise1 = fbm(vUv + swirl + vec2(timeOffset * 0.1, timeOffset * 0.2));
+                float noise2 = fbm(vUv * 2.0 - swirl + vec2(-timeOffset * 0.15, timeOffset * 0.1));
+                
+                // Combine noise patterns with musical responsiveness
+                float noiseCombined = mix(noise1, noise2, 0.5 + midIntensity * 0.5);
+                
+                // Edge fade-out
+                float edgeFade = smoothstep(0.8, 0.4, dist);
+                
+                // Calculate fog opacity with music-reactive pulses
+                float fogOpacity = noiseCombined * edgeFade;
+                fogOpacity *= (0.1 + bassIntensity * 0.3 + midIntensity * 0.2);
+                
+                // Apply slight color variation based on noise
+                vec3 finalColor = baseColor * (0.8 + noise1 * 0.4);
+                
+                // Add brightness pulsing based on music
+                finalColor *= 1.0 + trebleIntensity * 0.4;
+                
+                gl_FragColor = vec4(finalColor, fogOpacity * 0.3);
+            }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+    });
+    
+    const fogGroup = new THREE.Group();
+    
+    // Create multiple planes with slightly different positions for volumetric effect
+    for (let i = 0; i < planeCount; i++) {
+        const fogPlane = new THREE.Mesh(fogGeometry, fogMaterial.clone());
+        
+        // Distribute planes in 3D space
+        const offset = (i / (planeCount - 1)) - 0.5;
+        fogPlane.position.z = offset * 1.0;
+        
+        // Add slight rotation for more organic look
+        fogPlane.rotation.z = offset * 0.2;
+        
+        fogGroup.add(fogPlane);
+    }
+    
+    // Attach to musician for tracking and updates
+    musician.userData.fogVolume = fogGroup;
+    
+    // Position group at musician
+    fogGroup.position.copy(musician.position);
+    
+    scene.add(fogGroup);
+    return fogGroup;
+}
+
+// Update the createMusicianWithShader function
 const createMusicianWithShader = (imagePath, initialPosition, glowColor = new THREE.Color(0xff0000), isPlaying = false) => {
     const texture = textureLoader.load(imagePath);
     
@@ -415,18 +585,13 @@ const createMusicianWithShader = (imagePath, initialPosition, glowColor = new TH
     musician.position.set(initialPosition[0], MUSICIAN_PLANE_HEIGHT / 2, initialPosition[2]);
     musician.userData.isPlaying = isPlaying;
     scene.add(musician);
+    
+    // Add volumetric fog effects
+    createFogVolume(musician, glowColor.getHex());
+    createMusicianParticleSystem(musician, glowColor.getHex());
+    
     return musician;
 };
-
-// Replace the existing musician creation functions with new shader versions
-const createSinger = () => {
-    const singerMesh = createMusicianWithShader('/singer.png', [0, 0, 0], new THREE.Color(0xffffff));
-    // Start singer off-stage
-    singerMesh.position.x = -15;
-    return singerMesh;
-};
-
-const singer = createSinger();
 
 // Create backup singers
 const createBackupSinger = (imagePath, initialPosition, glowColor) => {
@@ -446,6 +611,7 @@ const backupSinger1 = createBackupSinger('/backup_singer_female.png', [-3.5, 0, 
 const backupSinger2 = createBackupSinger('/backup_singer_male.png', [3.5, 0, 1], new THREE.Color(0x66ff99));
 
 // Create main band members with their specific glow colors
+const singer = createMusicianWithShader('/singer.png', [0, 0, 0], new THREE.Color(0xffffff));
 const guitarist = createMusicianWithShader('/guitarist.png', [2, 0, -1], new THREE.Color(0xff9900), true);
 const bassist = createMusicianWithShader('/bassist.png', [-2, 0, 0], new THREE.Color(0x0099ff), true);
 const drummer = createMusicianWithShader('/drummer.png', [-15, 0, -2], new THREE.Color(0x9900ff), false);
@@ -783,6 +949,103 @@ function animateLights(delta) {
             // Add a bit of rotation for the drummer for more dynamism
             drummer.rotation.y = Math.sin(time * 0.5) * 0.1; 
         }
+    }
+    
+    // Animate particle systems and fog volumes
+    if (dataArray && isPlaying) {
+        analyser.getByteFrequencyData(dataArray);
+        
+        // Get frequency data
+        let bassSum = 0;
+        for (let i = 0; i < 10; i++) {
+            bassSum += dataArray[i];
+        }
+        const bassAvg = bassSum / 10 / 255;
+        
+        let midSum = 0;
+        for (let i = 10; i < 100; i++) {
+            midSum += dataArray[i];
+        }
+        const midAvg = midSum / 90 / 255;
+        
+        let trebleSum = 0;
+        for (let i = 100; i < dataArray.length; i++) {
+            trebleSum += dataArray[i];
+        }
+        const trebleAvg = trebleSum / (dataArray.length - 100) / 255;
+        
+        // Update all musicians
+        const allMusicians = [singer, guitarist, bassist, drummer, backupSinger1, backupSinger2];
+        
+        allMusicians.forEach(musician => {
+            // Update shader uniforms
+            updateMusicianShader(musician.material, bassAvg, midAvg, trebleAvg);
+            
+            // Update fog volume if it exists
+            if (musician.userData.fogVolume) {
+                const fogVolume = musician.userData.fogVolume;
+                
+                // Position fog volume with musician
+                fogVolume.position.copy(musician.position);
+                
+                // Update all fog planes in the volume
+                fogVolume.children.forEach(fogPlane => {
+                    if (fogPlane.material.uniforms) {
+                        fogPlane.material.uniforms.time.value = time;
+                        fogPlane.material.uniforms.bassIntensity.value = bassAvg;
+                        fogPlane.material.uniforms.midIntensity.value = midAvg;
+                        fogPlane.material.uniforms.trebleIntensity.value = trebleAvg;
+                    }
+                });
+            }
+            
+            // Update particle system if it exists
+            if (musician.userData.particleSystem) {
+                const particleSystem = musician.userData.particleSystem;
+                particleSystem.position.copy(musician.position);
+                
+                // Get particle attributes for animation
+                const positions = particleSystem.geometry.attributes.position.array;
+                const sizes = particleSystem.geometry.attributes.size.array;
+                const lives = particleSystem.geometry.attributes.life.array;
+                
+                const musicIntensity = bassAvg * 0.6 + midAvg * 0.3 + trebleAvg * 0.1;
+                
+                // Animate each particle
+                for (let i = 0; i < positions.length / 3; i++) {
+                    const i3 = i * 3;
+                    
+                    // Update particle life
+                    lives[i] -= 0.005 + Math.random() * 0.01;
+                    
+                    // If particle died, reset it at musician's position
+                    if (lives[i] <= 0) {
+                        positions[i3] = (Math.random() - 0.5) * MUSICIAN_PLANE_WIDTH * 0.8;
+                        positions[i3 + 1] = Math.random() * MUSICIAN_PLANE_HEIGHT * 0.9;
+                        positions[i3 + 2] = (Math.random() - 0.5) * 0.3;
+                        lives[i] = 1.0;
+                        sizes[i] = 5 + Math.random() * 15;
+                    } else {
+                        // Move particle upward and outward
+                        const moveX = Math.sin(time * 2 + i) * 0.01 * musicIntensity;
+                        const moveY = (0.01 + bassAvg * 0.03) * (1.0 - lives[i] * 0.8);
+                        const moveZ = (Math.random() - 0.5) * 0.01 * musicIntensity;
+                        
+                        positions[i3] += moveX;
+                        positions[i3 + 1] += moveY;
+                        positions[i3 + 2] += moveZ;
+                        
+                        // Make particles gradually larger as they rise
+                        sizes[i] = (5 + Math.random() * 15) * (1.0 + (1.0 - lives[i]) * 2.0);
+                    }
+                }
+                
+                // Update positions and lives
+                particleSystem.geometry.attributes.position.needsUpdate = true;
+                particleSystem.geometry.attributes.size.needsUpdate = true;
+                particleSystem.geometry.attributes.life.needsUpdate = true;
+            }
+        });
     }
 }
 
