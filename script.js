@@ -88,14 +88,14 @@ stage.position.y = -0.25;
 // stage.receiveShadow = true; 
 scene.add(stage);
 
-// Back wall with lighting effects
+// Back wall with lighting effects and curtains
 const backWallGeometry = new THREE.BoxGeometry(14, 8, 0.5);
-const lightingTexture = textureLoader.load('/stage_lights.png');
+const backdropTexture = textureLoader.load('/stage_backdrop.png');
 const backWallMaterial = new THREE.MeshPhongMaterial({ 
-    color: 0x222222, 
-    emissive: 0x111111,
-    map: lightingTexture,
-    emissiveMap: lightingTexture
+    color: 0xffffff, 
+    map: backdropTexture,
+    emissive: 0x333333,
+    emissiveMap: backdropTexture
 });
 const backWall = new THREE.Mesh(backWallGeometry, backWallMaterial);
 backWall.position.set(0, 4, -4);
