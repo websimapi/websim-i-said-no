@@ -11,7 +11,7 @@ scene.fog = new THREE.Fog(0x000000, 10, 50);
 
 // Camera setup
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, 1.5, 5);
+camera.position.set(0, 2.0, 5);
 
 // Renderer setup
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -257,24 +257,21 @@ let currentPlayTime = 0;
 let singerEntered = false;
 let drummerEntered = false;
 
-// Camera animation sequences
+// Camera animation sequences - raising all camera Y positions by approximately 0.5 units
 const cameraSequences = [
-    { startTime: 0, endTime: 10, position: new THREE.Vector3(0, 2, 6), lookAt: new THREE.Vector3(0, 1, 0), easing: 0.01 },
-    { startTime: 10, endTime: 17, position: new THREE.Vector3(3, 2, 4), lookAt: new THREE.Vector3(2, 1, -1), easing: 0.01 }, // Guitar focus
-    { startTime: 17, endTime: 25, position: new THREE.Vector3(-3, 2, 4), lookAt: new THREE.Vector3(-2, 1, 0), easing: 0.01 }, // Bass focus
-    { startTime: 25, endTime: 27.5, position: new THREE.Vector3(0, 1.5, 5), lookAt: new THREE.Vector3(0, 1, 0), easing: 0.01 }, // Wide shot
-    { startTime: 27.5, endTime: 40, position: new THREE.Vector3(2, 2, 5), lookAt: new THREE.Vector3(0, 1, 0), easing: 0.005 }, // Singer entrance
-    { startTime: 40, endTime: 47, position: new THREE.Vector3(-4, 2, 3), lookAt: new THREE.Vector3(-3.5, 1, 1), easing: 0.01 }, // Backup singer 1
-    { startTime: 47, endTime: 55, position: new THREE.Vector3(4, 2, 3), lookAt: new THREE.Vector3(3.5, 1, 1), easing: 0.01 }, // Backup singer 2
-    // Update drummer camera position and target for centered and raised position
-    { startTime: 55, endTime: 70, position: new THREE.Vector3(2, 4, 1), lookAt: new THREE.Vector3(0, 3.5, -2), easing: 0.005 }, // Drummer entrance
-    { startTime: 70, endTime: 80, position: new THREE.Vector3(0, 3, 6), lookAt: new THREE.Vector3(0, 1, 0), easing: 0.01 }, // Full band
-    { startTime: 80, endTime: 90, position: new THREE.Vector3(4, 2, 3), lookAt: new THREE.Vector3(2, 1, -1), easing: 0.01 }, // Guitar solo
-    { startTime: 90, endTime: 100, position: new THREE.Vector3(-4, 2, 3), lookAt: new THREE.Vector3(-2, 1, 0), easing: 0.01 }, // Bass solo
-    { startTime: 100, endTime: 110, position: new THREE.Vector3(1, 2, 4), lookAt: new THREE.Vector3(0, 1, 0), easing: 0.01 }, // Singer close-up
-    // Update drummer solo camera for new drummer position
-    { startTime: 110, endTime: 120, position: new THREE.Vector3(3, 4, 0), lookAt: new THREE.Vector3(0, 3.5, -2), easing: 0.01 }, // Drummer solo
-    // Continue cycling through band members after 120 seconds
+    { startTime: 0, endTime: 10, position: new THREE.Vector3(0, 2.5, 6), lookAt: new THREE.Vector3(0, 1, 0), easing: 0.01 },
+    { startTime: 10, endTime: 17, position: new THREE.Vector3(3, 2.5, 4), lookAt: new THREE.Vector3(2, 1, -1), easing: 0.01 }, // Guitar focus
+    { startTime: 17, endTime: 25, position: new THREE.Vector3(-3, 2.5, 4), lookAt: new THREE.Vector3(-2, 1, 0), easing: 0.01 }, // Bass focus
+    { startTime: 25, endTime: 27.5, position: new THREE.Vector3(0, 2.0, 5), lookAt: new THREE.Vector3(0, 1, 0), easing: 0.01 }, // Wide shot
+    { startTime: 27.5, endTime: 40, position: new THREE.Vector3(2, 2.5, 5), lookAt: new THREE.Vector3(0, 1, 0), easing: 0.005 }, // Singer entrance
+    { startTime: 40, endTime: 47, position: new THREE.Vector3(-4, 2.5, 3), lookAt: new THREE.Vector3(-3.5, 1, 1), easing: 0.01 }, // Backup singer 1
+    { startTime: 47, endTime: 55, position: new THREE.Vector3(4, 2.5, 3), lookAt: new THREE.Vector3(3.5, 1, 1), easing: 0.01 }, // Backup singer 2
+    { startTime: 55, endTime: 70, position: new THREE.Vector3(2, 4.5, 1), lookAt: new THREE.Vector3(0, 3.5, -2), easing: 0.005 }, // Drummer entrance
+    { startTime: 70, endTime: 80, position: new THREE.Vector3(0, 3.5, 6), lookAt: new THREE.Vector3(0, 1, 0), easing: 0.01 }, // Full band
+    { startTime: 80, endTime: 90, position: new THREE.Vector3(4, 2.5, 3), lookAt: new THREE.Vector3(2, 1, -1), easing: 0.01 }, // Guitar solo
+    { startTime: 90, endTime: 100, position: new THREE.Vector3(-4, 2.5, 3), lookAt: new THREE.Vector3(-2, 1, 0), easing: 0.01 }, // Bass solo
+    { startTime: 100, endTime: 110, position: new THREE.Vector3(1, 2.5, 4), lookAt: new THREE.Vector3(0, 1, 0), easing: 0.01 }, // Singer close-up
+    { startTime: 110, endTime: 120, position: new THREE.Vector3(3, 4.5, 0), lookAt: new THREE.Vector3(0, 3.5, -2), easing: 0.01 }, // Drummer solo
 ];
 
 // Animation for band member entrances
@@ -352,21 +349,21 @@ function animateMusiciansFirstSegment(time, bassAvg, midAvg) {
         bassist.position.y = musicianBaseY + Math.sin(time * 3) * 0.12 * bassAvg;
         bassist.rotation.x = Math.sin(time * 2.5) * 0.08 * bassAvg;
         
-        // Move camera to focus on guitarist and bassist
+        // Move camera to focus on guitarist and bassist - raised Y positions
         if (currentPlayTime < 10) {
-            camera.position.lerp(new THREE.Vector3(0, 2, 6), 0.01);
+            camera.position.lerp(new THREE.Vector3(0, 2.5, 6), 0.01);
             camera.lookAt(0, 1, 0);
         } else if (currentPlayTime < 20) {
-            camera.position.lerp(new THREE.Vector3(3, 2, 4), 0.01);
+            camera.position.lerp(new THREE.Vector3(3, 2.5, 4), 0.01);
             camera.lookAt(guitarist.position);
         } else {
-            camera.position.lerp(new THREE.Vector3(-3, 2, 4), 0.01);
+            camera.position.lerp(new THREE.Vector3(-3, 2.5, 4), 0.01);
             camera.lookAt(bassist.position);
         }
     } else {
-        // Return to default camera position after 25 seconds
+        // Return to default camera position after 25 seconds - raised Y position
         if (currentPlayTime < 27) {
-            camera.position.lerp(new THREE.Vector3(0, 1.5, 5), 0.01);
+            camera.position.lerp(new THREE.Vector3(0, 2.0, 5), 0.01);
             camera.lookAt(0, 1, 0);
         }
         
@@ -390,21 +387,21 @@ function updateCameraPosition() {
         const cycleTime = ((currentPlayTime - 120) % 40); // 10 seconds per band member
         
         if (cycleTime < 10) {
-            // Singer
-            camera.position.lerp(new THREE.Vector3(0, 2, 4), 0.01);
+            // Singer - raised Y position
+            camera.position.lerp(new THREE.Vector3(0, 2.5, 4), 0.01);
             camera.lookAt(singer.position);
         } else if (cycleTime < 20) {
-            // Guitarist
-            camera.position.lerp(new THREE.Vector3(3, 2, 3), 0.01);
+            // Guitarist - raised Y position
+            camera.position.lerp(new THREE.Vector3(3, 2.5, 3), 0.01);
             camera.lookAt(guitarist.position);
         } else if (cycleTime < 30) {
-            // Bassist
-            camera.position.lerp(new THREE.Vector3(-3, 2, 3), 0.01);
+            // Bassist - raised Y position
+            camera.position.lerp(new THREE.Vector3(-3, 2.5, 3), 0.01);
             camera.lookAt(bassist.position);
         } else {
-            // Drummer - adjust camera angle for centered and raised position
-            camera.position.lerp(new THREE.Vector3(2, 4, 1), 0.01);
-            camera.lookAt(new THREE.Vector3(0, 3.5, -2)); // Updated to look at higher drummer
+            // Drummer - raised Y position
+            camera.position.lerp(new THREE.Vector3(2, 4.5, 1), 0.01);
+            camera.lookAt(new THREE.Vector3(0, 3.5, -2));
         }
         return;
     }
