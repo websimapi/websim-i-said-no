@@ -44,7 +44,7 @@ void main() {
 }
 `;
 
-// Fragment shader for musician outline glow effect
+// Fragment shader for musician electric outline effect - updated for electric look
 const fragmentShader = `
 uniform sampler2D map;
 uniform vec3 baseColor;
@@ -62,36 +62,57 @@ uniform float beatStrength;
 varying vec2 vUv;
 varying vec3 vColor;
 
-// Improved noise function for more organic distortion
-vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-vec3 permute(vec3 x) { return mod289(((x*34.0)+1.0)*x); }
+// Hash function for electric noise
+float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+}
 
-float snoise(vec2 v) {
-    const vec4 C = vec4(0.211324865405187, 0.366025403784439,
-                     -0.577350269189626, 0.024390243902439);
-    vec2 i  = floor(v + dot(v, C.yy));
-    vec2 x0 = v -   i + dot(i, C.xx);
-    vec2 i1;
-    i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
-    vec4 x12 = x0.xyxy + C.xxzz;
-    x12.xy -= i1;
-    i = mod289(i);
-    vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0))
-    + i.x + vec3(0.0, i1.x, 1.0));
-    vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy),
-    dot(x12.zw,x12.zw)), 0.0);
-    m = m*m;
-    m = m*m;
-    vec3 x = 2.0 * fract(p * C.www) - 1.0;
-    vec3 h = abs(x) - 0.5;
-    vec3 ox = floor(x + 0.5);
-    vec3 a0 = x - ox;
-    m *= 1.79284291400159 - 0.85373472095314 * (a0*a0 + h*h);
-    vec3 g;
-    g.x  = a0.x  * x0.x  + h.x  * x0.y;
-    g.yz = a0.yz * x12.xz + h.yz * x12.yw;
-    return 130.0 * dot(m, g);
+// Improved noise function for electric patterns
+float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    
+    // Improved smoothing for sharper transitions
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+// Lightning noise for electric effect
+float lightning(vec2 p, float time) {
+    // Create fast, sharp noise patterns
+    float n1 = noise(p * 5.0 + time * 10.0);
+    float n2 = noise(p * 15.0 - time * 15.0);
+    float n3 = noise(p * 25.0 + time * 5.0);
+    
+    // Combine different frequencies for a lightning-like pattern
+    float lightning = pow(n1 * n2 * n3, 3.0) * 5.0;
+    
+    // Make it more jagged and electric-looking
+    lightning = smoothstep(0.5, 1.0, lightning) * smoothstep(0.8, 0.0, lightning);
+    
+    return lightning;
+}
+
+// Electric arc pattern
+float electricArc(vec2 uv, float time, float intensity) {
+    // Create electric arc patterns along the edge
+    float noise1 = noise(uv * 10.0 + time * 5.0) * 2.0 - 1.0;
+    float noise2 = noise(uv * 20.0 - time * 7.0) * 2.0 - 1.0;
+    float noise3 = noise(uv * 30.0 + time * 9.0) * 2.0 - 1.0;
+    
+    // Combine different noise scales for fractal-like patterns
+    float electricPattern = (noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2) * intensity;
+    
+    // Make pattern more jagged
+    electricPattern = pow(abs(electricPattern), 0.5) * sign(electricPattern);
+    
+    return electricPattern;
 }
 
 void main() {
@@ -102,66 +123,95 @@ void main() {
         discard;
     }
     
-    // Calculate distance to edge using alpha channel gradient - IMPROVED EDGE DETECTION
+    // Calculate distance to edge using alpha channel gradient
     float distanceToEdge = 0.0;
     if (texColor.a > 0.05 && texColor.a < 0.99) {
         distanceToEdge = 1.0 - abs(0.5 - texColor.a) * 2.0;
     }
     
-    // Animate outline width with audio and rhythm metrics - WIDER SPREAD
+    // Animate outline width with audio and rhythm metrics
     float beatPulse = smoothstep(0.0, 0.3, beatActive) * 
                      (sin(beatPhase * 3.14159 * 2.0) * 0.5 + 0.5);
                      
-    // Increase the spread distance but reduce intensity
+    // Electric effect width modulation - thinner, sharper outlines
     float animatedWidth = outlineWidth * (
-        1.4 + 
-        sin(time * (1.5 + rhythmConsistency)) * 0.25 * bassIntensity +
-        beatPulse * 0.5 * beatStrength
+        1.2 + 
+        sin(time * (3.0 + rhythmConsistency)) * 0.2 * bassIntensity +
+        beatPulse * 0.4 * beatStrength
     );
     
-    // Spread glow wider with lower intensity
-    float glowStrength = smoothstep(0.0, animatedWidth * 1.5, distanceToEdge) * (outlineIntensity * 0.8);
+    // Create electric edge effect with varying intensity based on audio
+    float electricEdgeIntensity = smoothstep(0.0, animatedWidth, distanceToEdge) * (outlineIntensity * 0.7);
     
-    // Enhanced pulsing based on detected rhythm with reduced intensity
-    float pulseFactor = 1.0 + 
-                      sin(time * (2.0 + rhythmConsistency * 3.0)) * 0.2 * audioIntensity + 
-                      beatPulse * 0.3 * beatStrength;
-    glowStrength *= pulseFactor;
+    // Add beat-synchronized flickering and pulsing for electric feel
+    float flickerSpeed = 15.0 + beatStrength * 10.0 + bassIntensity * 5.0;
+    float flicker = 0.7 + 0.3 * sin(time * flickerSpeed);
+    flicker *= (0.95 + 0.05 * sin(time * 30.0)); // Fast micro-flickers
     
-    // Create smoother wave-like distortion in the outline that follows the music's rhythm
-    float noiseScale = 2.0 + 3.0 * rhythmConsistency; // More consistent rhythm = sharper patterns
-    float waveDistortion = snoise(vec2(vUv.y * 10.0 + time * (1.0 + beatStrength), 
-                                      time * 0.5)) * 0.1 * beatActive;
-    glowStrength *= (1.0 + waveDistortion);
-    
-    // Color shift based on audio frequencies with BPM-synchronized transitions
-    vec3 shiftedColor = baseColor;
-    
-    // Use beat phase for smoother, synchronized color transitions
-    float bassColorPhase = sin(time * 0.5 + beatPhase * 6.28) * bassIntensity;
-    float midColorPhase = cos(time * 0.7 + beatPhase * 3.14) * midIntensity;
-    float highColorPhase = sin(time * 0.4 + beatPhase * 9.42) * highIntensity;
-    
-    // Apply color shifts synchronized to the music's rhythm
-    shiftedColor.r = baseColor.r * (1.0 + bassColorPhase * 0.3);
-    shiftedColor.g = baseColor.g * (1.0 + midColorPhase * 0.3);
-    shiftedColor.b = baseColor.b * (1.0 + highColorPhase * 0.3);
-    
-    // On beat, add a rhythmic pulse (reduced intensity)
-    if (beatActive > 0.6) {
-        // Smoother flash that peaks precisely with the beat
-        float flashIntensity = beatActive * beatStrength * (1.0 - beatPhase * 2.0);
-        flashIntensity = max(0.0, flashIntensity);
-        // Reduce flash intensity by 50%
-        shiftedColor = mix(shiftedColor, vec3(1.0), flashIntensity * 0.15);
+    // Add powerful pulses on beats
+    float beatFlash = 0.0;
+    if (beatActive > 0.5) {
+        beatFlash = beatActive * beatStrength * (1.0 - beatPhase * 1.5) * 0.3;
     }
     
-    // Mix the texture color with the animated outline glow
+    // Generate electric arc pattern at the edge
+    float electricPattern = electricArc(vUv, time, 0.5 + audioIntensity * 0.5);
+    
+    // Generate lightning pattern that intensifies with beats
+    float lightningEffect = lightning(vUv, time) * (0.4 + beatActive * 0.6) * electricEdgeIntensity;
+    
+    // Combine effects for final electric intensity
+    float finalElectricIntensity = electricEdgeIntensity * flicker + lightningEffect + beatFlash;
+    
+    // Electric color transitions based on audio frequencies
+    vec3 baseElectricColor = baseColor;
+    
+    // Shift color to electric blue-white spectrum
+    vec3 electricBlue = vec3(0.3, 0.7, 1.0); // Base electric blue
+    vec3 electricPurple = vec3(0.7, 0.3, 1.0); // Electric purple
+    vec3 electricWhite = vec3(1.0, 1.0, 1.0); // Bright center
+    
+    // Mix colors based on audio and rhythm
+    float bassShift = sin(time * 1.5 + beatPhase * 6.28) * bassIntensity * 0.5;
+    float midShift = cos(time * 2.2 + beatPhase * 3.14) * midIntensity * 0.5;
+    float highShift = sin(time * 3.0 + beatPhase * 9.42) * highIntensity * 0.5;
+    
+    // Create dynamic electric color based on frequency bands
+    vec3 dynamicElectricColor = mix(
+        electricBlue,
+        electricPurple,
+        (0.5 + bassShift + sin(time * 2.0) * 0.2)
+    );
+    
+    // Add flashes of white at the highest intensity points
+    dynamicElectricColor = mix(
+        dynamicElectricColor,
+        electricWhite,
+        pow(lightningEffect, 2.0) * 0.8
+    );
+    
+    // Add dynamic pattern to electricity
+    float patternIntensity = electricPattern * finalElectricIntensity;
+    vec3 patternColor = mix(dynamicElectricColor, electricWhite, patternIntensity * 0.7);
+    
+    // Final electric outline color
+    vec3 electricOutlineColor = mix(
+        dynamicElectricColor,
+        patternColor,
+        patternIntensity
+    );
+    
+    // Mix the texture color with the electric outline effect
     vec4 finalColor = texColor;
     
-    // Add the dynamic glow around the edges
-    if (glowStrength > 0.0) {
-        finalColor = mix(finalColor, vec4(shiftedColor, texColor.a), glowStrength);
+    // Add the electric glow around the edges
+    if (finalElectricIntensity > 0.0) {
+        // Create a sharper transition for more electric feel
+        finalColor = mix(
+            finalColor, 
+            vec4(electricOutlineColor, texColor.a), 
+            min(1.0, finalElectricIntensity * (1.0 + patternIntensity))
+        );
     }
     
     gl_FragColor = finalColor;
@@ -268,22 +318,22 @@ class MusicianEffect {
     }
     
     init() {
-        // Create the outline glow material with rhythm-reactive uniforms
+        // Create the electric outline glow material
         this.outlineShaderMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 map: { value: this.musician.material.map },
                 baseColor: { value: this.baseColor },
-                outlineWidth: { value: 0.15 }, // Wider outline for better spread
-                outlineIntensity: { value: 0.45 }, // Less intense for less brightness
+                outlineWidth: { value: 0.12 }, // Thinner outline for electric look
+                outlineIntensity: { value: 0.5 }, // Higher intensity for electric effect
                 time: { value: 0 },
                 audioIntensity: { value: 0 },
                 beatActive: { value: 0 },
                 bassIntensity: { value: 0 },
                 midIntensity: { value: 0 },
                 highIntensity: { value: 0 },
-                beatPhase: { value: 0 },            // Current phase in beat cycle (0-1)
-                rhythmConsistency: { value: 0 },    // How consistent is the rhythm
-                beatStrength: { value: 0 }          // How strong is the current beat
+                beatPhase: { value: 0 },
+                rhythmConsistency: { value: 0 },
+                beatStrength: { value: 0 }
             },
             vertexShader: vertexShader,
             fragmentShader: fragmentShader,
@@ -298,7 +348,7 @@ class MusicianEffect {
         // Apply the shader material
         this.musician.material = this.outlineShaderMaterial;
         
-        // Create particles behind the musician
+        // Create particles behind the musician (lava effect)
         this.createParticleSystem();
     }
     
@@ -477,18 +527,20 @@ class MusicianEffect {
             this.outlineShaderMaterial.uniforms.rhythmConsistency.value = smoothedAudio.rhythmConsistency;
             this.outlineShaderMaterial.uniforms.beatStrength.value = smoothedAudio.beatStrength;
             
-            // Dynamic outline properties that react to the rhythm - reduced intensity
+            // Dynamic outline properties that react to the rhythm
             const beatFactor = smoothedAudio.beatDetected ? 
                 smoothedAudio.beatConfidence * (1.0 - smoothedAudio.beatPhase * 1.5) : 0;
             
+            // Electric effect intensity increases on beats
             this.outlineShaderMaterial.uniforms.outlineIntensity.value = 
-                0.45 + smoothedAudio.bassIntensity * 0.3 + beatFactor * 0.3;
+                0.5 + smoothedAudio.bassIntensity * 0.3 + beatFactor * 0.4;
                 
+            // Keep electric outline thin but expands slightly with beat
             this.outlineShaderMaterial.uniforms.outlineWidth.value = 
-                0.15 + smoothedAudio.midIntensity * 0.08 + beatFactor * 0.07;
+                0.12 + smoothedAudio.midIntensity * 0.06 + beatFactor * 0.08;
         }
         
-        // Update particle system with rhythm-synchronized values
+        // Update particle system (lava effect) - keeps existing fluid behavior
         if (this.particleSystem) {
             // Update uniforms with rhythm-aware audio data
             this.particleSystem.material.uniforms.time.value = time;
@@ -523,8 +575,7 @@ class MusicianEffect {
             
             for (let i = 0; i < positions.length / 3; i++) {
                 // Update lifetime with rhythm-aware decay - slower decay for wider spread
-                const lifetimeDecay = 0.008 * (1.0 + smoothedAudio.intensity * 0.2) * bpmDecayMultiplier;
-                lifetimes[i] -= lifetimeDecay; 
+                const lifetimeDecay = 0.008 * (1.0 + smoothedAudio.intensity * 0.2) * bpmDecayMultiplier; 
                 
                 // If particle died or moved too far, respawn it
                 const dx = positions[i * 3] - emitPositions[i * 3];
