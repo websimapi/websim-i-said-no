@@ -536,10 +536,15 @@ function animateLights(delta) {
 function updateShaderEffects(time) {
     if (!audioAnalyzer || !isPlaying) return;
     
-    // Get audio analysis data
+    // Get audio analysis data with enhanced rhythm metrics
     const audioData = audioAnalyzer.update();
     
-    // Update each musician effect
+    // Log BPM and rhythm data occasionally for debugging
+    if (Math.floor(time) % 5 === 0 && Math.floor(time * 10) % 10 === 0) {
+        console.log(`BPM: ${audioData.bpm.toFixed(1)}, Beat Confidence: ${audioData.beatConfidence.toFixed(2)}, Rhythm Consistency: ${audioData.rhythmConsistency.toFixed(2)}`);
+    }
+    
+    // Update each musician effect with enhanced audio data
     musicianEffects.forEach(effect => {
         effect.update(time, audioData);
     });
