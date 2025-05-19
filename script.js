@@ -63,7 +63,7 @@ const guitaristSpot = createSpotlight(0xff9900, 3, [3, 5, 0], [2, 0, -1]);
 const bassistSpot = createSpotlight(0x0099ff, 3, [-3, 5, 0], [-2, 0, 0]);
 const singerSpot = createSpotlight(0xffffff, 0, [0, 5, 1], [0, 1, 0]);
 // Update drummer spotlight position and target for center-back position
-const drummerSpot = createSpotlight(0x9900ff, 0, [0, 6, -2], [0, 1.5, -2]);
+const drummerSpot = createSpotlight(0x9900ff, 0, [0, 7, -2], [0, 3.5, -2]);
 const backupSpot1 = createSpotlight(0xff6699, 0, [-4, 5, 0], [-3.5, 1, 1]);
 const backupSpot2 = createSpotlight(0x66ff99, 0, [4, 5, 0], [3.5, 1, 1]);
 
@@ -97,14 +97,14 @@ stage.position.y = -0.25;
 scene.add(stage);
 
 // Create drummer riser (elevated platform)
-const riserGeometry = new THREE.BoxGeometry(3, 0.5, 2);
+const riserGeometry = new THREE.BoxGeometry(3, 2.0, 2); // Increased height from 0.5 to 2.0 (4x higher)
 const riserMaterial = new THREE.MeshPhongMaterial({ 
     map: stageTexture,
     color: 0x333333, // Slightly darker than main stage
     emissive: 0x111111
 });
 const drumRiser = new THREE.Mesh(riserGeometry, riserMaterial);
-drumRiser.position.set(0, 0, -2.5); // Positioned at back-center of stage
+drumRiser.position.set(0, 1.0, -2.5); // Increased Y position to 1.0 (from 0) to account for larger height
 scene.add(drumRiser);
 
 // Back wall with lighting effects and curtains
@@ -192,7 +192,7 @@ const guitarist = createMusicianPlane('/guitarist.png', [2, 0, -1], true);
 const bassist = createMusicianPlane('/bassist.png', [-2, 0, 0], true);
 
 // Drummer - starts off-stage, will be centered and elevated when arrives
-const drummer = createMusicianPlane('/drummer.png', [-15, 0.5, -2], false);
+const drummer = createMusicianPlane('/drummer.png', [-15, 2.0, -2], false); // Increased initial Y to 2.0 from 0.5
 
 // Audio setup
 const audioElement = document.getElementById('music');
@@ -267,13 +267,13 @@ const cameraSequences = [
     { startTime: 40, endTime: 47, position: new THREE.Vector3(-4, 2, 3), lookAt: new THREE.Vector3(-3.5, 1, 1), easing: 0.01 }, // Backup singer 1
     { startTime: 47, endTime: 55, position: new THREE.Vector3(4, 2, 3), lookAt: new THREE.Vector3(3.5, 1, 1), easing: 0.01 }, // Backup singer 2
     // Update drummer camera position and target for centered and raised position
-    { startTime: 55, endTime: 70, position: new THREE.Vector3(2, 3, 1), lookAt: new THREE.Vector3(0, 1.5, -2), easing: 0.005 }, // Drummer entrance
+    { startTime: 55, endTime: 70, position: new THREE.Vector3(2, 4, 1), lookAt: new THREE.Vector3(0, 3.5, -2), easing: 0.005 }, // Drummer entrance
     { startTime: 70, endTime: 80, position: new THREE.Vector3(0, 3, 6), lookAt: new THREE.Vector3(0, 1, 0), easing: 0.01 }, // Full band
     { startTime: 80, endTime: 90, position: new THREE.Vector3(4, 2, 3), lookAt: new THREE.Vector3(2, 1, -1), easing: 0.01 }, // Guitar solo
     { startTime: 90, endTime: 100, position: new THREE.Vector3(-4, 2, 3), lookAt: new THREE.Vector3(-2, 1, 0), easing: 0.01 }, // Bass solo
     { startTime: 100, endTime: 110, position: new THREE.Vector3(1, 2, 4), lookAt: new THREE.Vector3(0, 1, 0), easing: 0.01 }, // Singer close-up
     // Update drummer solo camera for new drummer position
-    { startTime: 110, endTime: 120, position: new THREE.Vector3(3, 3, 0), lookAt: new THREE.Vector3(0, 1.5, -2), easing: 0.01 }, // Drummer solo
+    { startTime: 110, endTime: 120, position: new THREE.Vector3(3, 4, 0), lookAt: new THREE.Vector3(0, 3.5, -2), easing: 0.01 }, // Drummer solo
     // Continue cycling through band members after 120 seconds
 ];
 
@@ -332,7 +332,7 @@ function animateBandEntrances() {
         
         // Animate drummer coming in to center position and higher Y position
         new TWEEN.Tween(drummer.position)
-            .to({ x: 0, y: MUSICIAN_PLANE_HEIGHT / 2 + 0.5 }, 1500) 
+            .to({ x: 0, y: MUSICIAN_PLANE_HEIGHT / 2 + 2.0 }, 1500) 
             .easing(TWEEN.Easing.Quadratic.Out)
             .start();
     }
@@ -403,8 +403,8 @@ function updateCameraPosition() {
             camera.lookAt(bassist.position);
         } else {
             // Drummer - adjust camera angle for centered and raised position
-            camera.position.lerp(new THREE.Vector3(2, 3, 1), 0.01);
-            camera.lookAt(new THREE.Vector3(0, 1.5, -2)); // Look at centered drummer
+            camera.position.lerp(new THREE.Vector3(2, 4, 1), 0.01);
+            camera.lookAt(new THREE.Vector3(0, 3.5, -2)); // Updated to look at higher drummer
         }
         return;
     }
@@ -540,7 +540,7 @@ function animateLights(delta) {
         
         // Drummer movement (only if on stage)
         if (drummerEntered) {
-            drummer.position.y = musicianBaseY + Math.sin(time * 8) * 0.15 * bassAvg;
+            drummer.position.y = (MUSICIAN_PLANE_HEIGHT / 2 + 2.0) + Math.sin(time * 8) * 0.15 * bassAvg;
             // Add a bit of rotation for the drummer for more dynamism
             drummer.rotation.y = Math.sin(time * 0.5) * 0.1; 
         }
